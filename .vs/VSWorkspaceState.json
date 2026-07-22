@@ -1,8 +1,9 @@
 {
   "ExpandedNodes": [
     "",
-    "\\src"
+    "\\src",
+    "\\src\\assets"
   ],
-  "SelectedNode": "\\src\\main.py",
+  "SelectedNode": "\\src\\assets\\Login_page_background.jpg",
   "PreviewInSolutionExplorer": false
 }

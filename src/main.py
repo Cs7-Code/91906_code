@@ -13,8 +13,16 @@ def main(page: ft.Page):
     #Configuring Page 
     page.title = "Login"
 
+    page.theme_mode = ft.ThemeMode.LIGHT
+
     page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
     page.vertical_alignment = ft.CrossAxisAlignment.CENTER
+
+    page.bgcolor = ft.Colors.TRANSPARENT
+
+
+
+    page.decoration = ft.BoxDecoration(image=ft.DecorationImage(src="Login_page_background.jpg", fit=ft.BoxFit.FILL))
 
     #Page Title
 
@@ -36,21 +44,24 @@ def main(page: ft.Page):
 
     user_password_field = ft.Row([user_password_icon, user_name_text_field], tight=True)
 
+    #Login button
+
+    login_button = ft.FilledButton("Login")
+
     #Login fields 
 
     login_fields = ft.Column(horizontal_alignment=ft.CrossAxisAlignment.CENTER, 
-                             controls=[login_title, user_name_field, user_password_field])
+                             controls=[login_title, user_name_field, user_password_field, login_button])
 
     
 
     page.add(ft.Card(shadow_color=ft.Colors.ON_SURFACE_VARIANT, 
-                     content=ft.Container(padding=10, content=login_fields)
+                     content=ft.Container(padding=10, content=login_fields),
+                     opacity=0.65
                     )
             )
 
-    #Login button
-
-    page.add(ft.FilledButton("Login"))
+    
 
 if __name__ == "__main__":
     ft.run(main)
