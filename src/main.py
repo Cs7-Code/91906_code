@@ -1,24 +1,34 @@
-from ctypes import alignment
 import flet as ft
 import sqlite3 as sql
+
 
 def login(user_id, user_password):
     pass
 
-def home_page(page:ft.Page):
+
+def home_page(page: ft.Page):
     page.title = "Home"
+
+    page.padding = 10
 
     page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
     page.vertical_alignment = ft.CrossAxisAlignment.CENTER
 
+    page.navigation_bar= ft.NavigationBar(
+        selected_index=0,
+        destinations=[
+            ft.NavigationBarDestination(icon=ft.Icons.HOME_ROUNDED, label="Home"),
+            ft.NavigationBarDestination(icon=ft.Icons.ACCOUNT_CIRCLE_ROUNDED, label="Test User")
+            
+        ]
+    )
 
-    nav_bar = ft.NavigationRail(selected_index=0, destinations=[
-        ft.NavigationRailDestination(icon=ft.Icons.STAR, label="Star"),
-        ft.NavigationRailDestination(icon=ft.Icon(ft.Icons.ADD),label="Add"),
-        ft.NavigationRailDestination(icon=ft.Icons.DELETE, label=ft.Text("Delete"))])
+    temp_user = "User"
 
-    page.add(ft.Column(alignment=ft.MainAxisAlignment.START, expand=True, controls=nav_bar))
+    welcome_message = ft.Text(f"Welcome, {temp_user}!", theme_style=ft.TextThemeStyle.DISPLAY_SMALL)
 
+    page.add(ft.Container(alignment=ft.Alignment.TOP_CENTER, content=welcome_message, expand=True))
+    
 
 
 """def main(page: ft.Page):
@@ -73,7 +83,6 @@ def home_page(page:ft.Page):
                     )
             )"""
 
-    
 
 if __name__ == "__main__":
     ft.run(home_page)
