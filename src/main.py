@@ -1,15 +1,27 @@
+from ctypes import alignment
 import flet as ft
 import sqlite3 as sql
 
 def login(user_id, user_password):
-    conn = sql.connect("user.db")
+    pass
 
-    curs = conn.cusor()
+def home_page(page:ft.Page):
+    page.title = "Home"
+
+    page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
+    page.vertical_alignment = ft.CrossAxisAlignment.CENTER
+
+
+    nav_bar = ft.NavigationRail(selected_index=0, destinations=[
+        ft.NavigationRailDestination(icon=ft.Icons.STAR, label="Star"),
+        ft.NavigationRailDestination(icon=ft.Icon(ft.Icons.ADD),label="Add"),
+        ft.NavigationRailDestination(icon=ft.Icons.DELETE, label=ft.Text("Delete"))])
+
+    page.add(ft.Column(alignment=ft.MainAxisAlignment.START, expand=True, controls=nav_bar))
 
 
 
-
-def main(page: ft.Page):
+"""def main(page: ft.Page):
     #Configuring Page 
     page.title = "Login"
 
@@ -59,9 +71,9 @@ def main(page: ft.Page):
                      content=ft.Container(padding=10, content=login_fields),
                      opacity=0.65
                     )
-            )
+            )"""
 
     
 
 if __name__ == "__main__":
-    ft.run(main)
+    ft.run(home_page)
