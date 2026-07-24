@@ -10,6 +10,7 @@ authors = [
 dependencies = [
     "faker>=40.35.0",
     "flet>=0.86.1",
+    "pydantic>=2.13.4",
 ]
 
 [dependency-groups]

@@ -1,9 +1,25 @@
 import flet as ft
 import sqlite3 as sql
+from pydantic import BaseModel, Field, ValidationError, field_validator
+from faker import Faker
 
 
-def login(user_id, user_password):
-    pass
+class User(BaseModel):
+    name: dict[str]
+    id: str = Field(max_length=5)
+    pass: str
+    
+    @field_validator('id', 'pass', mode='before')
+    @classmethod 
+    def is_input_valid():
+        
+
+
+def db():
+    def login(User):
+        pass
+    
+    
 
 
 def home_page(page: ft.Page):
@@ -23,7 +39,7 @@ def home_page(page: ft.Page):
         ]
     )
 
-    temp_user = "User"
+    temp_user = Faker().last_name()
 
     welcome_message = ft.Text(f"Welcome, {temp_user}!", theme_style=ft.TextThemeStyle.DISPLAY_SMALL)
 
