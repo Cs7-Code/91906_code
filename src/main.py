@@ -1,18 +1,18 @@
+
 import flet as ft
-import sqlite3 as sql
-from pydantic import BaseModel, Field, ValidationError, field_validator
 from faker import Faker
+from pydantic import BaseModel, Field, field_validator
 
 
 class User(BaseModel):
     name: dict[str]
     id: str = Field(max_length=5)
-    pass: str
+    password: str
     
     @field_validator('id', 'pass', mode='before')
     @classmethod 
     def is_input_valid():
-        
+        pass 
 
 
 def db():
