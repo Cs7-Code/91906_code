@@ -1,23 +1,58 @@
 # import flet as ft
 # from faker import Faker
 from typing import Dict
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Column, Field, SQLModel, create_engine, Session, select, JSON
 
 
 class User(SQLModel, table=True):
     id: int | None = Field(primary_key=True)
     name: Dict[str, str] = Field(sa_column=Column(JSON))
-    user_id: int = Field(ge=1000, le=9999, unique=True)
-    user_pass: str
+    user_id: int = Field(ge=1000, le=9999, unique=True, nullable=False)
+    user_pass: str = Field(nullable=False)
 
     @classmethod
-    def create_user(cls, engine, user_name_ent, user_id_ent, user_pass_ent) -> None:
+    def create_user(
+        cls, engine, user_name_ent, user_id_ent, user_pass_ent
+    ) -> str | None:
         with Session(engine) as session:
             new_user = cls(
                 name=user_name_ent, user_id=user_id_ent, user_pass=user_pass_ent
             )
-            session.add(new_user)
+
+            try:
+                session.add(new_user)
+                session.commit()
+                return None
+            except IntegrityError:
+                session.rollback()
+                return "User creation failed (User ID not unique)"
+            except Exception as e:
+                session.rollback()
+                return f"An error occured (Error Details: {e})"
+
+    @classmethod
+    def update_user_info(
+        cls, engine, user_id, value_to_change: str, new_value: str | int | None = None
+    ) -> bool:
+        with Session(engine) as session:
+            statement = select(User).where(User.user_id == user_id)
+            user = session.exec(statement).first()
+
+            match value_to_change:
+                case "User Name" if type(new_value) is str:
+                    user.name = new_value
+                case "ID" if type(new_value) is int:
+                    user.user_id = new_value
+                case "Password" if type(new_value) is str:
+                    user.user_pass = new_value
+                case _:
+                    return False
+
+            session.update(user)
             session.commit()
+
+            return True
 
     @classmethod
     def remove_user(cls, engine, user_name_ent, user_id_ent, user_pass_ent) -> None:
@@ -29,19 +64,6 @@ class User(SQLModel, table=True):
 
             session.delete(user)
 
-            
-
-
-class db:
-    @staticmethod
-    def db_config():
-        db_file_name = "users.db"
-
-        engine = create_engine(f"sqlite:///{db_file_name}")
-        SQLModel.metadata.create_all(engine)
-
-        return engine
-
     @staticmethod
     def login(engine, user_id_ent, user_pass_ent) -> bool:
         with Session(engine) as session:
@@ -50,7 +72,16 @@ class db:
             )
             user_exists = session.exec(statement).first()
 
-            return user_exists is not None  
+            return user_exists is not None
+
+
+def db_config():
+    db_file_name = "users.db"
+
+    engine = create_engine(f"sqlite:///{db_file_name}")
+    SQLModel.metadata.create_all(engine)
+
+    return engine
 
 
 """def home_page(page: ft.Page):
@@ -157,6 +188,4 @@ class db:
 
 if __name__ == "__main__":
     # ft.run(main)
-    engine = db.db_config()
-
-    User.create_user(engine, 1234, "Test", "Test")
+    engine = db_config()
