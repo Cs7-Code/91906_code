@@ -1,24 +1,56 @@
-from typing import Sequence
-import flet as ft
-from faker import Faker
-from sqlmodel import Field, SQLModel, create_engine
+# import flet as ft
+# from faker import Faker
+from typing import Dict
+from sqlmodel import Column, Field, SQLModel, create_engine, Session, select, JSON
 
 
 class User(SQLModel, table=True):
     id: int | None = Field(primary_key=True)
-    name: dict[str]
-    password: str
-    
-def db():
-    db_file_name = "users.db"
-    
-    engine = create_engine(f"sqlite://{db_file_name}")
-    SQLModel.metadate.create_all(engine)
+    name: Dict[str, str] = Field(sa_column=Column(JSON))
+    user_id: int = Field(ge=1000, le=9999, unique=True)
+    user_pass: str
 
-    def login(User):
-        pass
-    
-    
+    @classmethod
+    def create_user(cls, engine, user_name_ent, user_id_ent, user_pass_ent) -> None:
+        with Session(engine) as session:
+            new_user = cls(
+                name=user_name_ent, user_id=user_id_ent, user_pass=user_pass_ent
+            )
+            session.add(new_user)
+            session.commit()
+
+    @classmethod
+    def remove_user(cls, engine, user_name_ent, user_id_ent, user_pass_ent) -> None:
+        with Session(engine) as session:
+            statement = select(User).where(
+                User.user_id == user_id_ent, User.user_pass == user_pass_ent
+            )
+            user = session.exec(statement).first()
+
+            session.delete(user)
+
+            
+
+
+class db:
+    @staticmethod
+    def db_config():
+        db_file_name = "users.db"
+
+        engine = create_engine(f"sqlite:///{db_file_name}")
+        SQLModel.metadata.create_all(engine)
+
+        return engine
+
+    @staticmethod
+    def login(engine, user_id_ent, user_pass_ent) -> bool:
+        with Session(engine) as session:
+            statement = select(User).where(
+                User.user_id == user_id_ent, User.user_pass == user_pass_ent
+            )
+            user_exists = session.exec(statement).first()
+
+            return user_exists is not None  
 
 
 """def home_page(page: ft.Page):
@@ -66,10 +98,9 @@ def db():
     welcome_message = ft.Text(f"Welcome, {temp_user}!", theme_style=ft.TextThemeStyle.DISPLAY_SMALL)
 
     page.add(ft.Container(alignment=ft.Alignment.TOP_CENTER, content=welcome_message, expand=True))"""
-    
 
 
-def main(page: ft.Page):
+"""def main(page: ft.Page):
     #Configuring Page 
     page.title = "Login"
 
@@ -121,8 +152,11 @@ def main(page: ft.Page):
                      content=ft.Container(padding=10, content=login_fields),
                      opacity=0.65
                     )
-            )
+            )"""
 
 
 if __name__ == "__main__":
-    ft.run(main)
+    # ft.run(main)
+    engine = db.db_config()
+
+    User.create_user(engine, 1234, "Test", "Test")
