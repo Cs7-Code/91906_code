@@ -1,6 +1,5 @@
-import os 
-import asyncio
-from fastapi import background
+import os
+
 import flet as ft
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Field, Session, SQLModel, create_engine, select
@@ -14,23 +13,20 @@ class User(SQLModel, table=True):
 
     @classmethod
     def create_user(
-        cls, engine, user_name_ent, user_id_ent, user_pass_ent
-    ) -> str | None:
+        cls, engine, user_id_ent, user_pass_ent
+    ) -> bool:
         with Session(engine) as session:
             new_user = cls(
-                name=user_name_ent, user_id=user_id_ent, user_pass=user_pass_ent
+                user_id=user_id_ent, user_pass=user_pass_ent
             )
 
             try:
                 session.add(new_user)
                 session.commit()
-                return None
+                return True 
             except IntegrityError:
                 session.rollback()
-                return "User creation failed (User ID not unique)"
-            except Exception:
-                session.rollback()
-                return f"An error occured (Error Details: {Exception})"
+                return False
 
     @classmethod
     def update_user_info(
@@ -50,7 +46,6 @@ class User(SQLModel, table=True):
                 case _:
                     return False
 
-           
             session.commit()
 
             return True
@@ -73,21 +68,22 @@ class User(SQLModel, table=True):
                 cls.user_id == user_id_ent, cls.user_pass == user_pass_ent
             )
             user_exists = session.exec(statement).first()
-                
+
             return user_exists is not None
 
     @staticmethod
     def db_config():
-        
+
         db_file_name = os.path.join(os.path.dirname(__file__), "users.db")
 
         engine = create_engine(f"sqlite:///{db_file_name}")
         SQLModel.metadata.create_all(engine)
 
         return engine
-        
 
 
+
+   
 def home_page(page: ft.Page) -> ft.View:
     """page.title = "Home"
 
@@ -106,86 +102,228 @@ def home_page(page: ft.Page) -> ft.View:
         ]
     )"""
 
-    welcome_message = ft.Text("Welcome, test!", theme_style=ft.TextThemeStyle.DISPLAY_SMALL)
+    welcome_message = ft.Text(
+        "Welcome, test!", theme_style=ft.TextThemeStyle.DISPLAY_SMALL
+    )
 
-    return ft.View(route="/home", controls=[ft.Container(alignment=ft.Alignment.TOP_CENTER, content=welcome_message, expand=True)])
+    return ft.View(
+        route="/home",
+        controls=[
+            ft.Container(
+                alignment=ft.Alignment.TOP_CENTER, content=welcome_message, expand=True
+            )
+        ],
+    )
+
 
 def login_page(page: ft.Page) -> ft.View:
-    #Page Title
+    # Page Title
 
     login_title = ft.Text("Login", theme_style=ft.TextThemeStyle.DISPLAY_SMALL)
 
-    #User ID Fields 
+    # User ID Fields
 
-    user_name_icon = ft.Icon(ft.Icons.ACCOUNT_CIRCLE_ROUNDED, color=ft.Colors.PRIMARY, size=40)
+    user_id_icon = ft.Icon(
+        ft.Icons.ACCOUNT_CIRCLE_ROUNDED, color=ft.Colors.PRIMARY, size=40
+    )
 
-    user_id_text_field = ft.TextField(label="User ID", max_length=5, counter="", input_filter=ft.InputFilter("[0-9+]*$"))
+    user_id_text_field = ft.TextField(
+        label="User ID",
+        max_length=5,
+        counter="",
+        input_filter=ft.NumbersOnlyInputFilter(),
+    )
 
-    user_name_field = ft.Row([user_name_icon, user_id_text_field], tight=True)
+    user_name_field = ft.Row([user_id_icon, user_id_text_field], tight=True, tooltip="User ID")
 
-    #Password fields
+    # Password fields
 
     user_password_icon = ft.Icon(ft.Icons.PASSWORD, color=ft.Colors.PRIMARY, size=40)
 
-    user_password_text_field = ft.TextField(label="Password/Pin", password=True, can_reveal_password=True)
+    user_password_text_field = ft.TextField(
+        label="Password/Pin", password=True, can_reveal_password=True
+    )
 
-    user_password_field = ft.Row([user_password_icon, user_password_text_field], tight=True)
+    user_password_field = ft.Row(
+        [user_password_icon, user_password_text_field], tight=True, tooltip="Password/Pin"
+    )
 
-    #Login button
+    # Login button
 
-    def login_on_click(e): 
-        if not isinstance(user_id_text_field.value, int) or not isinstance(user_password_text_field.value, str):
+    def login_on_click(e):
+        try:
+            user_id_ent = int(user_id_text_field.value)
+
+            if user_password_text_field.value == "":
+                raise ValueError
+
+        except ValueError:
             def close_dialog(e):
                 page.pop_dialog()
 
-            input_fail_dialog = ft.AlertDialog(modal=False, title=ft.Text("Input not of Correct Type"), content=ft.Text("Input not of Correct Type, please re-enter your user ID and/or Password and ensure they are the correct types"), actions=[ft.TextButton("Dismiss", on_click=close_dialog)])
-            
+            input_fail_dialog = ft.AlertDialog(
+                modal=False,
+                title=ft.Text("Input is of Incorrect Type"),
+                content=ft.Text(
+                    "Input is of Incorrect Type, please re-enter your user ID and/or Password and ensure they are of the correct types (i.e not blank)"
+                ),
+                scrollable=False,
+                actions=[ft.TextButton("Dismiss", on_click=close_dialog)],
+            )
+
             page.show_dialog(input_fail_dialog)
             return False
 
         engine = User.db_config()
 
-        login_success = User.login(engine, int(user_id_text_field.value), str(user_password_text_field.value))
+        user_password_ent = user_password_text_field.value
+            
+        login_success = User.login(engine, user_id_ent, user_password_ent)
 
         if login_success:
-            current_user_id = int(user_id_text_field.value)
+            #current_user_id = int(user_id_text_field.value)
             page.navigate("/home")
         else:
+
             def close_dialog(e):
                 page.pop_dialog()
 
-            login_fail_dialog = ft.AlertDialog(modal=False, title=ft.Text("Login Failed"), content=ft.Text("Login Failed, please re-enter your user ID and/or Password and try again"), actions=[ft.TextButton("Dismiss", on_click=close_dialog)])
-            
-            page.show_dialog(login_fail_dialog)
-            
+            login_fail_dialog = ft.AlertDialog(
+                modal=False,
+                title=ft.Text("Login Unsuccesful"),
+                content=ft.Text(
+                    "Login Unsuccesful, user ID and/or Password may be incorrect, please re-enter these values and try again"
+                ),
+                scrollable=False,
+                actions=[ft.TextButton("Dismiss", on_click=close_dialog)],
+            )
 
-            
-            
-            
+            page.show_dialog(login_fail_dialog)
 
     login_button = ft.FilledButton(content=ft.Text("Login"), on_click=login_on_click)
 
+    def on_create_user_button_click(e):
+        def close_dialog(e):
+                page.pop_dialog()
 
-    #Login fields 
+        # User ID Fields
+        create_user_id_text_field = ft.TextField(
+        label="User ID",
+        max_length=5,
+        counter="",
+        input_filter=ft.NumbersOnlyInputFilter(),
+        )
 
-    login_fields = ft.Column(horizontal_alignment=ft.CrossAxisAlignment.CENTER, 
-                             controls=[login_title, user_name_field, user_password_field, login_button])
+        create_user_name_field = ft.Row([user_id_icon, create_user_id_text_field], tight=True, tooltip="User ID")
 
-    
+        # Password fields
+        create_user_password_text_field = ft.TextField(
+        label="Password/Pin", password=True, can_reveal_password=True
+        )
 
-    login_card = ft.Card(shadow_color=ft.Colors.ON_SURFACE_VARIANT, 
-                     content=ft.Container(padding=10, content=login_fields),
-                     opacity=0.65
-                    )
-    
-    image = os.path.join(os.path.dirname(__file__), "login_background_img.png")
-    
-    background_img = ft.BoxDecoration(image=ft.DecorationImage(src=image, fit=ft.BoxFit.FILL))
+        user_password_field = ft.Row(
+        [user_password_icon, create_user_password_text_field], tight=True, tooltip="Password/Pin"
+        )
 
-    return ft.View(route="/login", decoration=background_img, horizontal_alignment=ft.CrossAxisAlignment.CENTER, 
-    vertical_alignment=ft.MainAxisAlignment.CENTER, controls=[login_card])
+        create_user_column = ft.Column(
+        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+        tight=True,
+        controls=[create_user_name_field, user_password_field],
+        )
 
-    
+        create_user_fields = ft.Container(content=create_user_column, padding=10)
+        
+        def on_close(engine, user_id, user_pass):
+            is_user_creation_success = User.create_user(engine, user_id, user_pass)
+
+            def close_dialog(e):
+                    page.pop_dialog()
+           
+            if is_user_creation_success != True:
+                unique_fail_dialog = ft.AlertDialog(
+                    modal=False,
+                    title=ft.Text("User Information entered is not unique"),
+                    content=ft.Text(
+                        "User Information entered is not unique, please re-enter your user ID and/or Password and ensure they are unique values"
+                    ),
+                    scrollable=False,
+                    actions=[ft.TextButton("Dismiss", on_click=close_dialog)],
+                )
+
+                page.show_dialog(unique_fail_dialog)
+                return False
+            else:
+                page.pop_dialog()
+                
+
+        def create_user_verify(e):
+            try:
+                create_user_id_ent = int(create_user_id_text_field.value)
+
+                if create_user_password_text_field.value == "":
+                    raise ValueError
+
+            except ValueError:
+                def close_dialog(e):
+                    page.pop_dialog()
+
+                create_user_input_fail_dialog = ft.AlertDialog(
+                    modal=False,
+                    title=ft.Text("Input is of Incorrect Type"),
+                    content=ft.Text(
+                        "Input is of Incorrect Type, please re-enter your user ID and/or Password and ensure they are of the correct types (i.e not blank)"
+                    ),
+                    scrollable=False,
+                    actions=[ft.TextButton("Dismiss", on_click=close_dialog)],
+                )
+
+
+                page.show_dialog(create_user_input_fail_dialog)
+                return False
+
+            engine = User.db_config()
+            create_user_password_text_field_ent = create_user_password_text_field.value
+
+            on_close(engine, create_user_id_ent, create_user_password_text_field_ent)
+        
+           
+
+        create_user_dialog = ft.AlertDialog(
+            modal=False,
+            title=ft.Text("Create User"),
+            content=create_user_fields,
+            actions=[ft.TextButton("Create User", on_click=create_user_verify)],
+        )
+
+        page.show_dialog(create_user_dialog)
+        return False
+        
+
+    create_user_button = ft.FilledButton(content=ft.Text("Create User"), on_click=on_create_user_button_click)
+
+    actions_row = ft.Row(
+        [login_button, create_user_button], tight=True
+    )
+
+    # Login fields
+
+    login_fields = ft.Column(
+        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+        controls=[login_title, user_name_field, user_password_field, actions_row],
+    )
+
+    login_card = ft.Card(
+        shadow_color=ft.Colors.ON_SURFACE_VARIANT,
+        content=ft.Container(padding=10, content=login_fields),
+        opacity=0.65,
+    )
+
+    return ft.View(
+        route="/login",
+        horizontal_alignment = ft.CrossAxisAlignment.CENTER,
+        vertical_alignment = ft.CrossAxisAlignment.CENTER,
+        controls=[login_card],
+    )
 
 
 def main(page: ft.Page):
@@ -194,30 +332,24 @@ def main(page: ft.Page):
     page.horizontal_alignment = ft.MainAxisAlignment.CENTER
     page.vertical_alignment = ft.MainAxisAlignment.CENTER
 
-    
+    #global current_user_id
 
-    global current_user_id
+    #current_user_id = None
 
-    current_user_id = None
-    
     def on_route_change(e=None):
         page.views.clear()
 
-        if current_user_id is not None and page.route == "/home":
+        if page.route == "/home":
             page.views.append(home_page(page))
         else:
             page.views.append(login_page(page))
 
-        
         page.update()
-            
-    page.on_route_change = on_route_change
-    
-    on_route_change()
 
-    
+    page.on_route_change = on_route_change
+
+    on_route_change()
 
 
 if __name__ == "__main__":
     ft.run(main)
-    
