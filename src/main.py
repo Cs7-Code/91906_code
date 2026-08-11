@@ -1,5 +1,6 @@
-import os
-
+import os 
+import asyncio
+from fastapi import background
 import flet as ft
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Field, Session, SQLModel, create_engine, select
@@ -68,9 +69,6 @@ class User(SQLModel, table=True):
     @classmethod
     def login(cls, engine, user_id_ent: int, user_pass_ent: str) -> bool:
         with Session(engine) as session:
-
-            print(engine, user_id_ent, user_pass_ent)
-
             statement = select(cls).where(
                 cls.user_id == user_id_ent, cls.user_pass == user_pass_ent
             )
@@ -90,37 +88,15 @@ class User(SQLModel, table=True):
         
 
 
-"""def home_page(page: ft.Page):
-    def home_view():
-        page.clean()
-        page.update()
-        temp_user = Faker().last_name()
-
-        welcome_message = ft.Text(f"Welcome, {temp_user}!", theme_style=ft.TextThemeStyle.DISPLAY_SMALL)
-
-        page.add(ft.Container(alignment=ft.Alignment.TOP_CENTER, content=welcome_message, expand=True))
-    
-    def settings_view():
-        page.clean()
-        page.update()
-        page.add(ft.Text("This is settings"))
-
-
-    def handle_change(e):
-        if e.control.selected_index == 0:
-            home_view()
-        if e.control.selected_index == 1:
-            settings_view()
-
-
-    page.title = "Home"
+def home_page(page: ft.Page) -> ft.View:
+    """page.title = "Home"
 
     page.padding = 10
 
     page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
-    page.vertical_alignment = ft.CrossAxisAlignment.CENTER
+    page.vertical_alignment = ft.CrossAxisAlignment.CENTER"""
 
-    page.navigation_bar= ft.NavigationBar(
+    """page.navigation_bar= ft.NavigationBar(
         selected_index=0,
         on_change=handle_change,
         destinations=[
@@ -128,29 +104,13 @@ class User(SQLModel, table=True):
             ft.NavigationBarDestination(icon=ft.Icons.ACCOUNT_CIRCLE_ROUNDED, label="Test User")
             
         ]
-    )
+    )"""
 
-    temp_user = Faker().last_name()
+    welcome_message = ft.Text("Welcome, test!", theme_style=ft.TextThemeStyle.DISPLAY_SMALL)
 
-    welcome_message = ft.Text(f"Welcome, {temp_user}!", theme_style=ft.TextThemeStyle.DISPLAY_SMALL)
+    return ft.View(route="/home", controls=[ft.Container(alignment=ft.Alignment.TOP_CENTER, content=welcome_message, expand=True)])
 
-    page.add(ft.Container(alignment=ft.Alignment.TOP_CENTER, content=welcome_message, expand=True))"""
-
-
-def main(page: ft.Page):
-    #Configuring Page 
-    page.title = "Login"
-
-    page.theme_mode = ft.ThemeMode.LIGHT
-
-    page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
-    page.vertical_alignment = ft.CrossAxisAlignment.CENTER
-
-    page.bgcolor = ft.Colors.TRANSPARENT
-
-    page.decoration = ft.BoxDecoration(image=ft.DecorationImage(src="Login_page_background.jpg", fit=ft.BoxFit.FILL))
-
-    
+def login_page(page: ft.Page) -> ft.View:
     #Page Title
 
     login_title = ft.Text("Login", theme_style=ft.TextThemeStyle.DISPLAY_SMALL)
@@ -159,7 +119,7 @@ def main(page: ft.Page):
 
     user_name_icon = ft.Icon(ft.Icons.ACCOUNT_CIRCLE_ROUNDED, color=ft.Colors.PRIMARY, size=40)
 
-    user_id_text_field = ft.TextField(label="User ID", max_length=5, counter="")
+    user_id_text_field = ft.TextField(label="User ID", max_length=5, counter="", input_filter=ft.InputFilter("[0-9+]*$"))
 
     user_name_field = ft.Row([user_name_icon, user_id_text_field], tight=True)
 
@@ -173,12 +133,35 @@ def main(page: ft.Page):
 
     #Login button
 
-    def login_on_click(): 
+    def login_on_click(e): 
+        if not isinstance(user_id_text_field.value, int) or not isinstance(user_password_text_field.value, str):
+            def close_dialog(e):
+                page.pop_dialog()
+
+            input_fail_dialog = ft.AlertDialog(modal=False, title=ft.Text("Input not of Correct Type"), content=ft.Text("Input not of Correct Type, please re-enter your user ID and/or Password and ensure they are the correct types"), actions=[ft.TextButton("Dismiss", on_click=close_dialog)])
+            
+            page.show_dialog(input_fail_dialog)
+            return False
+
         engine = User.db_config()
 
         login_success = User.login(engine, int(user_id_text_field.value), str(user_password_text_field.value))
 
-        print(login_success)
+        if login_success:
+            current_user_id = int(user_id_text_field.value)
+            page.navigate("/home")
+        else:
+            def close_dialog(e):
+                page.pop_dialog()
+
+            login_fail_dialog = ft.AlertDialog(modal=False, title=ft.Text("Login Failed"), content=ft.Text("Login Failed, please re-enter your user ID and/or Password and try again"), actions=[ft.TextButton("Dismiss", on_click=close_dialog)])
+            
+            page.show_dialog(login_fail_dialog)
+            
+
+            
+            
+            
 
     login_button = ft.FilledButton(content=ft.Text("Login"), on_click=login_on_click)
 
@@ -190,11 +173,49 @@ def main(page: ft.Page):
 
     
 
-    page.add(ft.Card(shadow_color=ft.Colors.ON_SURFACE_VARIANT, 
+    login_card = ft.Card(shadow_color=ft.Colors.ON_SURFACE_VARIANT, 
                      content=ft.Container(padding=10, content=login_fields),
                      opacity=0.65
                     )
-            )
+    
+    image = os.path.join(os.path.dirname(__file__), "login_background_img.png")
+    
+    background_img = ft.BoxDecoration(image=ft.DecorationImage(src=image, fit=ft.BoxFit.FILL))
+
+    return ft.View(route="/login", decoration=background_img, horizontal_alignment=ft.CrossAxisAlignment.CENTER, 
+    vertical_alignment=ft.MainAxisAlignment.CENTER, controls=[login_card])
+
+    
+
+
+def main(page: ft.Page):
+    page.theme_mode = ft.ThemeMode.DARK
+
+    page.horizontal_alignment = ft.MainAxisAlignment.CENTER
+    page.vertical_alignment = ft.MainAxisAlignment.CENTER
+
+    
+
+    global current_user_id
+
+    current_user_id = None
+    
+    def on_route_change(e=None):
+        page.views.clear()
+
+        if current_user_id is not None and page.route == "/home":
+            page.views.append(home_page(page))
+        else:
+            page.views.append(login_page(page))
+
+        
+        page.update()
+            
+    page.on_route_change = on_route_change
+    
+    on_route_change()
+
+    
 
 
 if __name__ == "__main__":
