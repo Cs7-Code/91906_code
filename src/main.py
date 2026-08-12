@@ -1,6 +1,7 @@
 import os
 
 import flet as ft
+from flet.controls.material import navigation_bar
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Field, Session, SQLModel, create_engine, select
 
@@ -85,26 +86,18 @@ class User(SQLModel, table=True):
 
    
 def home_page(page: ft.Page) -> ft.View:
-    """page.title = "Home"
+    page.title = "Home"
 
-    page.padding = 10
+    """page.padding = 10
 
     page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
     page.vertical_alignment = ft.CrossAxisAlignment.CENTER"""
 
-    """page.navigation_bar= ft.NavigationBar(
-        selected_index=0,
-        on_change=handle_change,
-        destinations=[
-            ft.NavigationBarDestination(icon=ft.Icons.HOME_ROUNDED, label="Home"),
-            ft.NavigationBarDestination(icon=ft.Icons.ACCOUNT_CIRCLE_ROUNDED, label="Test User")
-            
-        ]
-    )"""
-
     welcome_message = ft.Text(
         "Welcome, test!", theme_style=ft.TextThemeStyle.DISPLAY_SMALL
     )
+
+    
 
     return ft.View(
         route="/home",
@@ -113,7 +106,8 @@ def home_page(page: ft.Page) -> ft.View:
                 alignment=ft.Alignment.TOP_CENTER, content=welcome_message, expand=True
             )
         ],
-    )
+        )
+
 
 
 def login_page(page: ft.Page) -> ft.View:
@@ -332,6 +326,8 @@ def main(page: ft.Page):
     page.horizontal_alignment = ft.MainAxisAlignment.CENTER
     page.vertical_alignment = ft.MainAxisAlignment.CENTER
 
+    
+
     #global current_user_id
 
     #current_user_id = None
@@ -341,8 +337,19 @@ def main(page: ft.Page):
 
         if page.route == "/home":
             page.views.append(home_page(page))
+
+            page.navigation_bar = ft.NavigationBar(
+            selected_index=0,
+            destinations=[
+                ft.NavigationBarDestination(icon=ft.Icons.HOME_ROUNDED, label="Home"),
+                ft.NavigationBarDestination(icon=ft.Icons.ACCOUNT_CIRCLE_ROUNDED, label="Test User")
+        
+            ], 
+            ) 
         else:
             page.views.append(login_page(page))
+            
+            
 
         page.update()
 
