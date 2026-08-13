@@ -3,7 +3,7 @@ import os
 import flet as ft
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Field, Session, SQLModel, create_engine, select
-
+\e
 
 class User(SQLModel, table=True):
     id: int | None = Field(primary_key=True)
@@ -321,7 +321,7 @@ def login_page(page: ft.Page) -> ft.View:
 def settings_page(page: ft.Page) -> ft.View:
     page.title = "Settings"
 
-    welcome_message = ft.Text("Test", theme_style=ft.TextThemeStyle.DISPLAY_MEDIUM)
+    title = ft.Text("Settings", theme_style=ft.TextThemeStyle.DISPLAY_MEDIUM)
 
     user_id_icon = ft.Icon(
         ft.Icons.ACCOUNT_CIRCLE_ROUNDED, color=ft.Colors.PRIMARY, size=40
@@ -382,14 +382,18 @@ def settings_page(page: ft.Page) -> ft.View:
 
         new_password_fields = ft.Container(content=new_password_column, padding=10)
 
+        def close_change_dialog(e):
+            page.pop_dialog()
+
         def on_close(pass_values):
             engine = User.db_config()
 
             User.update_user_info(
-                engine, page.session.store.get("User_ID"), "Password", pass_values
+                engine,
+                page.session.store.get("User_ID"),
+                "Password",
+                pass_values["New_Password"],
             )
-
-        def close_change_dialog(e):
             page.pop_dialog()
 
         def change_password_verify(e):
@@ -399,7 +403,7 @@ def settings_page(page: ft.Page) -> ft.View:
 
                 pass_values = {
                     "Current_Password": current_password_text_field.value,
-                    "New Password": new_password_text_field.value,
+                    "New_Password": new_password_text_field.value,
                 }
 
                 engine = User.db_config()
@@ -407,11 +411,11 @@ def settings_page(page: ft.Page) -> ft.View:
                 with Session(engine) as session:
                     statement = select(User).where(
                         User.user_id == page.session.store.get("User_ID"),
-                        User.user_pass == pass_values["New Password"],
+                        User.user_pass == pass_values["Current_Password"],
                     )
                     user = session.exec(statement).first()
 
-                    if user == None or "":
+                    if user is None:
                         raise ValueError
 
             except ValueError:
@@ -446,37 +450,125 @@ def settings_page(page: ft.Page) -> ft.View:
         page.show_dialog(create_user_dialog)
         return False
 
-    user_reset_pass_button = ft.FilledButton(
-        content="Reset Password", on_click=password_change
+    password_change_button = ft.FilledButton("Reset Password", on_click=password_change)
+
+    check_pass_engine = User.db_config()
+
+    with Session(check_pass_engine) as session:
+        statement = select(User).where(
+            User.user_id == page.session.store.get("User_ID"),
+        )
+        user = session.exec(statement).first()
+
+        user_pass = user.user_pass
+
+    def show_pass(e):
+
+        if user_pass_textfield.password == True:
+            user_reveal_pass.icon = ft.Icons.VISIBILITY_OFF_ROUNDED
+
+            user_password_icon = ft.Icon(
+                ft.Icons.PASSWORD, color=ft.Colors.SECONDARY, size=40
+            )
+
+            password_text_field = ft.TextField(
+                label="Password/Pin", password=True, can_reveal_password=True
+            )
+
+            password_field = ft.Row(
+                [user_password_icon, password_text_field],
+                tight=True,
+                tooltip="Current Password/Pin",
+            )
+
+            def close_dialog(e):
+                page.pop_dialog()
+
+            def check_pass_ent(e):
+                try:
+                    if password_text_field.value == "":
+                        raise ValueError
+
+                    engine = User.db_config()
+
+                    with Session(engine) as session:
+                        statement = select(User).where(
+                            User.user_id == page.session.store.get("User_ID"),
+                            User.user_pass == password_text_field.value,
+                        )
+                        user = session.exec(statement).first()
+
+                        if user is None:
+                            raise ValueError
+                        else:
+                            user_pass_textfield.password = False
+                            user_reveal_pass.icon = ft.Icons.VISIBILITY_OFF_ROUNDED
+                            page.pop_dialog()
+                            page.update()
+
+                except ValueError:
+
+                    def close_dialog(e):
+                        page.pop_dialog()
+
+                    pass_input_fail_dialog = ft.AlertDialog(
+                        modal=False,
+                        title=ft.Text("Password Incorrect"),
+                        content=ft.Text(
+                            "Input is of Incorrect Type or is incorrect, please re-enter your Password and ensure they are of the correct types and value (i.e not blank)"
+                        ),
+                        scrollable=False,
+                        actions=[ft.FilledButton("Dismiss", on_click=close_dialog)],
+                    )
+
+                    page.show_dialog(pass_input_fail_dialog)
+                    return False
+
+            check_pass_dialog = ft.AlertDialog(
+                modal=False,
+                title=ft.Text("Password Verification"),
+                content=password_field,
+                actions=[ft.FilledButton("Check Password", on_click=check_pass_ent)],
+            )
+
+            page.show_dialog(check_pass_dialog)
+
+        else:
+            user_reveal_pass.icon = ft.Icons.VISIBILITY_ROUNDED
+            user_pass_textfield.password = True
+            page.update()
+
+    user_reveal_pass = ft.IconButton(
+        icon=ft.Icons.VISIBILITY_ROUNDED, on_click=show_pass
+    )
+
+    user_pass_textfield = ft.TextField(
+        label="Password/Pin",
+        password=True,
+        can_reveal_password=False,
+        read_only=True,
+        value=user_pass,
+        suffix=user_reveal_pass,
     )
 
     user_password_field = ft.Row(
-        controls=[user_password_icon, user_reset_pass_button],
+        controls=[user_password_icon, user_pass_textfield],
         tight=True,
         tooltip="Password/Pin",
     )
 
-    row_user_fields = ft.Row(
-        tight=True, spacing=15, controls=[user_name_field, user_password_field]
+    user_info_fields = ft.Column(
+        tight=True,
+        controls=[user_name_field, user_password_field, password_change_button],
     )
 
-    user_info_panel = ft.ExpansionPanelList(
-        ft.ExpansionPanel(
-            header=ft.Text(
-                "User Information", theme_style=ft.TextThemeStyle.HEADLINE_MEDIUM
-            ),
-            content=ft.Container(content=row_user_fields, padding=10),
-        ),
-        ft.ExpansionPanel(
-            header=ft.Text(
-                "User Actions", theme_style=ft.TextThemeStyle.HEADLINE_MEDIUM
-            )
-        ),
+    user_info_container = ft.Container(
+        alignment=ft.Alignment.CENTER_LEFT, content=user_info_fields
     )
 
     settings_column = ft.Column(
         horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-        controls=[welcome_message, user_info_panel],
+        controls=[title, user_info_container],
     )
 
     settings_view = ft.View(
@@ -548,18 +640,18 @@ def main(page: ft.Page):
         if template_route.match("/home") and page.session.store.get("User_ID") != "":
             page.views.append(home_page(page))
             page.navigation_bar = navigation_bar
-            navigation_bar.destinations[1].label = (
-                f"{page.session.store.get('User_ID')}"
-            )
+            navigation_bar.destinations[
+                1
+            ].label = f"{page.session.store.get('User_ID')}"
         elif page.route == "/login":
             page.views.append(login_page(page))
         elif page.route == "/settings" and page.session.store.get("User_ID") != "":
             page.views.append(settings_page(page))
             page.add(logout_container)
             page.navigation_bar = navigation_bar
-            navigation_bar.destinations[1].label = (
-                f"{page.session.store.get('User_ID')}"
-            )
+            navigation_bar.destinations[
+                1
+            ].label = f"{page.session.store.get('User_ID')}"
 
         page.update()
 
