@@ -2,8 +2,9 @@
   "ExpandedNodes": [
     "",
     "\\src",
-    "\\src\\assets"
+    "\\src\\assets",
+    "\\src\\dist"
   ],
-  "SelectedNode": "\\src\\main.py",
+  "SelectedNode": "\\src\\dist\\Math_Revisor.exe",
   "PreviewInSolutionExplorer": false
 }

@@ -1,6 +1,6 @@
 [project]
 name = "91906-code"
-version = "0.3.0"
+version = "1.0.0"
 description = ""
 readme = "README.md"
 requires-python = ">=3.10"
@@ -9,8 +9,11 @@ authors = [
 ]
 dependencies = [
     "faker>=40.35.0",
+    "flet-math>=0.1.1",
     "flet[all]>=0.86.1",
+    "matplotlib>=3.10.9",
     "pydantic>=2.13.4",
+    "pyinstaller>=6.22.1",
     "sqlmodel>=0.0.39",
 ]
 

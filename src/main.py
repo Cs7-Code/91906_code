@@ -1,20 +1,32 @@
 import os
-
+import urllib
 import flet as ft
+from pydantic import Base64Str, BaseModel
 from sqlalchemy.exc import IntegrityError
-from sqlmodel import Field, Session, SQLModel, create_engine, select
-\e
+from sqlmodel import JSON, Column, Field, Session, SQLModel, create_engine, select
+
+
+class Name(BaseModel):
+    first_name: str
+    last_name: str
+
 
 class User(SQLModel, table=True):
     id: int | None = Field(primary_key=True)
-    # name: dict[str, str] = Field(sa_column=Column(JSON))
+    user_name: Name = Field(sa_column=Column(JSON))
     user_id: int = Field(ge=1000, le=9999, unique=True, nullable=False)
     user_pass: str = Field(nullable=False)
 
     @classmethod
-    def create_user(cls, engine, user_id_ent, user_pass_ent) -> bool:
+    def create_user(
+        cls, engine, user_name_ent: Name, user_id_ent: int, user_pass_ent: str
+    ) -> bool:
         with Session(engine) as session:
-            new_user = cls(user_id=user_id_ent, user_pass=user_pass_ent)
+            new_user = cls(
+                user_name=user_name_ent.model_dump(),
+                user_id=user_id_ent,
+                user_pass=user_pass_ent,
+            )
 
             try:
                 session.add(new_user)
@@ -79,23 +91,236 @@ class User(SQLModel, table=True):
         return engine
 
 
+class Question(BaseModel):
+    question_no: int
+    question_sub_let: str = Field(max_length=1)
+    question_text: str
+    question_formula: str | None
+    # question_image: Base64Str | None = Field(deprecated=True)
+
+
+class QuestionSet(BaseModel):
+    question_set_name: str
+    question_year: str | None
+    question_list: list[Question]
+
+    def save_to_json(self):
+        with open(f"{self.question_set_name}.json", "w", encoding="utf-8") as f:
+            f.write(self.model_dump_json(indent=4))
+
+    @classmethod
+    def load_from_json(cls, json_file_to_read):
+        try:
+            if not json_file_to_read.endswith(".json"):
+                json_file_to_read = f"{json_file_to_read}.json"
+            else:
+                pass
+
+            with open(f"{json_file_to_read}", "r", encoding="utf-8") as f:
+                output_from_file = f.read()
+
+            question_set = cls.model_validate_json(output_from_file)
+
+            return question_set
+        except ValueError:
+            return "Inputed File invaild"
+        except FileNotFoundError:
+            return "File couldn't be found"
+
+
 def home_page(page: ft.Page) -> ft.View:
     page.title = "Home"
 
     current_user_id = page.session.store.get("User_ID")
+    engine = User.db_config()
+
+    with Session(engine) as session:
+        statement = select(User).where(User.user_id == current_user_id)
+        user = session.exec(statement).first()
+        user_name = Name.model_validate(user.user_name).first_name
 
     welcome_message = ft.Text(
-        f"Welcome, {current_user_id}!", theme_style=ft.TextThemeStyle.DISPLAY_SMALL
+        f"Welcome, {user_name}!", theme_style=ft.TextThemeStyle.DISPLAY_SMALL
+    )
+
+    welcome_container = ft.Container(
+        alignment=ft.Alignment.TOP_CENTER, content=welcome_message, expand=True
+    )
+
+    question_set_grid = ft.GridView(
+        expand=False,
+        max_extent=180,
+        runs_count=3,
+        spacing=10,
+        run_spacing=10,
+    )
+
+    for file in os.listdir(os.path.dirname(__file__)):
+        if file.endswith(".json"):
+            qs = QuestionSet.load_from_json(file)
+            if isinstance(qs, QuestionSet):
+                question_set_grid.controls.append(
+                    ft.Container(
+                        width=150,
+                        height=150,
+                        bgcolor=ft.Colors.PRIMARY_CONTAINER,
+                        border_radius=8,
+                        alignment=ft.Alignment.CENTER,
+                        content=ft.Text(qs.question_set_name),
+                    )
+                )
+
+    grid_container = ft.Container(
+        height=300,
+        content=question_set_grid,
+    )
+
+    def action_on_click(e):
+        question_list: list[Question] = []
+
+        question_set_name_field = ft.TextField(label="Question Set Name")
+        question_set_year_field = ft.TextField(label="Year (Optional)")
+
+        question_preview_column = ft.Column(scroll="auto")
+
+        def open_add_question_dialog(e):
+            question_no_field = ft.TextField(
+                label="Question Number",
+                max_length=1,
+                input_filter=ft.NumbersOnlyInputFilter(),
+            )
+
+            question_sub_letter_field = ft.TextField(
+                label="Sub-letter (Optional)",
+                max_length=1,
+            )
+
+            question_text_field = ft.TextField(label="Question Text")
+
+            question_formula_preview = ft.Image(src="", width=300, height=300)
+
+            def update_formula(e):
+                encoded = urllib.parse.quote(question_formula_field.value)
+                question_formula_preview.src = (
+                    f"https://latex.codecogs.com/png.image?"
+                    f"\\dpi{{300}}\\bg_white {encoded}"
+                )
+                page.update()
+
+            question_formula_field = ft.TextField(
+                label="Formula (Optional)",
+                on_change=update_formula,
+            )
+
+            def submit_question(e):
+                try:
+                    new_question = Question(
+                        question_no=int(question_no_field.value),
+                        question_sub_let=question_sub_letter_field.value,
+                        question_text=question_text_field.value,
+                        question_formula=question_formula_preview.src,
+                    )
+
+                    question_list.append(new_question)
+
+                    question_preview_column.controls.append(
+                        ft.Text(
+                            f"{new_question.question_no}"
+                            f"{new_question.question_sub_let}. "
+                            f"{new_question.question_text}"
+                        )
+                    )
+
+                    page.pop_dialog()
+                    page.update()
+
+                except Exception as error:
+                    page.snack_bar = ft.SnackBar(ft.Text(f"Error: {error}"))
+                    page.snack_bar.open = True
+                    page.update()
+
+            add_q_dialog = ft.AlertDialog(
+                modal=True,
+                title=ft.Text("Add Question"),
+                content=ft.Column(
+                    [
+                        question_no_field,
+                        question_sub_letter_field,
+                        question_text_field,
+                        question_formula_field,
+                        question_formula_preview,
+                    ],
+                    tight=True,
+                ),
+                actions=[
+                    ft.TextButton("Cancel", on_click=lambda _: page.pop_dialog()),
+                    ft.FilledButton("Add", on_click=submit_question),
+                ],
+            )
+
+            page.show_dialog(add_q_dialog)
+
+        def save_question_set(e):
+            try:
+                new_question_set = QuestionSet(
+                    question_set_name=question_set_name_field.value,
+                    question_year=question_set_year_field.value,
+                    question_list=question_list,
+                )
+
+                new_question_set.save_to_json()
+
+                page.pop_dialog()
+                page.snack_bar = ft.SnackBar(ft.Text("Question Set Saved"))
+                page.snack_bar.open = True
+                page.update()
+
+            except Exception as error:
+                page.snack_bar = ft.SnackBar(ft.Text(f"Error: {error}"))
+                page.snack_bar.open = True
+                page.update()
+
+        question_dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Create Question Set"),
+            content=ft.Column(
+                [
+                    question_set_name_field,
+                    question_set_year_field,
+                    ft.Divider(),
+                    ft.Text("Questions:", size=16, weight=ft.FontWeight.BOLD),
+                    question_preview_column,
+                    ft.FilledButton("Add Question", on_click=open_add_question_dialog),
+                ],
+                tight=True,
+                scroll="auto",
+            ),
+            actions=[
+                ft.TextButton("Cancel", on_click=lambda _: page.pop_dialog()),
+                ft.FilledButton("Save Set", on_click=save_question_set),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+
+        page.show_dialog(question_dialog)
+
+    add_question_button = ft.FloatingActionButton(
+        icon=ft.Icons.ADD,
+        mouse_cursor=ft.MouseCursor.CLICK,
+        tooltip="Add Question Set",
+        on_click=action_on_click,
+    )
+
+    add_question_container = ft.Container(
+        alignment=ft.Alignment.BOTTOM_RIGHT, content=add_question_button, expand=True
     )
 
     return ft.View(
         route="/home",
-        controls=[
-            ft.Container(
-                alignment=ft.Alignment.TOP_CENTER, content=welcome_message, expand=True
-            )
-        ],
+        controls=[welcome_container, grid_container, add_question_container],
     )
+
+
 
 
 def login_page(page: ft.Page) -> ft.View:
@@ -198,6 +423,31 @@ def login_page(page: ft.Page) -> ft.View:
         def close_dialog(e):
             page.pop_dialog()
 
+        # Name fields
+        create_user_fname_text_field = ft.TextField(
+            label="First Name",
+        )
+
+        create_user_lname_text_field = ft.TextField(
+            label="Last Name",
+        )
+
+        name_column = ft.Column(
+            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+            tight=True,
+            controls=[create_user_fname_text_field, create_user_lname_text_field],
+        )
+
+        user_name_icon = ft.Icon(
+            ft.Icons.BADGE_ROUNDED, color=ft.Colors.PRIMARY, size=40
+        )
+
+        create_user_name_field = ft.Row(
+            [user_name_icon, name_column],
+            tight=True,
+            tooltip="Name",
+        )
+
         # User ID Fields
         create_user_id_text_field = ft.TextField(
             label="User ID",
@@ -206,7 +456,7 @@ def login_page(page: ft.Page) -> ft.View:
             input_filter=ft.NumbersOnlyInputFilter(),
         )
 
-        create_user_name_field = ft.Row(
+        create_user_id_field = ft.Row(
             [user_id_icon, create_user_id_text_field], tight=True, tooltip="User ID"
         )
 
@@ -215,7 +465,7 @@ def login_page(page: ft.Page) -> ft.View:
             label="Password/Pin", password=True, can_reveal_password=True
         )
 
-        user_password_field = ft.Row(
+        create_user_password_field = ft.Row(
             [user_password_icon, create_user_password_text_field],
             tight=True,
             tooltip="Password/Pin",
@@ -224,13 +474,19 @@ def login_page(page: ft.Page) -> ft.View:
         create_user_column = ft.Column(
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
             tight=True,
-            controls=[create_user_name_field, user_password_field],
+            controls=[
+                create_user_name_field,
+                create_user_id_field,
+                create_user_password_field,
+            ],
         )
 
         create_user_fields = ft.Container(content=create_user_column, padding=10)
 
-        def on_close(engine, user_id, user_pass):
-            is_user_creation_success = User.create_user(engine, user_id, user_pass)
+        def on_close(engine, user_name, user_id, user_pass):
+            is_user_creation_success = User.create_user(
+                engine, user_name, user_id, user_pass
+            )
 
             def close_dialog(e):
                 page.pop_dialog()
@@ -253,9 +509,18 @@ def login_page(page: ft.Page) -> ft.View:
 
         def create_user_verify(e):
             try:
-                create_user_id_ent = int(create_user_id_text_field.value)
+                if len(create_user_id_text_field.value) == 5:
+                    create_user_id_ent = int(create_user_id_text_field.value)
+                else:
+                    raise ValueError
 
                 if create_user_password_text_field.value == "":
+                    raise ValueError
+
+                if (
+                    create_user_fname_text_field.value == ""
+                    or create_user_lname_text_field.value == ""
+                ):
                     raise ValueError
 
             except ValueError:
@@ -278,8 +543,17 @@ def login_page(page: ft.Page) -> ft.View:
 
             engine = User.db_config()
             create_user_password_text_field_ent = create_user_password_text_field.value
+            create_user_name = Name(
+                first_name=create_user_fname_text_field.value,
+                last_name=create_user_lname_text_field.value,
+            )
 
-            on_close(engine, create_user_id_ent, create_user_password_text_field_ent)
+            on_close(
+                engine,
+                create_user_name,
+                create_user_id_ent,
+                create_user_password_text_field_ent,
+            )
 
         create_user_dialog = ft.AlertDialog(
             modal=False,
@@ -626,7 +900,9 @@ def main(page: ft.Page):
         on_change=home_route_change,
         destinations=[
             ft.NavigationBarDestination(icon=ft.Icons.HOME_ROUNDED, label="Home"),
-            ft.NavigationBarDestination(icon=ft.Icons.ACCOUNT_CIRCLE_ROUNDED, label=""),
+            ft.NavigationBarDestination(
+                icon=ft.Icons.ACCOUNT_CIRCLE_ROUNDED, label="", tooltip="Settings"
+            ),
         ],
     )
 
@@ -640,18 +916,18 @@ def main(page: ft.Page):
         if template_route.match("/home") and page.session.store.get("User_ID") != "":
             page.views.append(home_page(page))
             page.navigation_bar = navigation_bar
-            navigation_bar.destinations[
-                1
-            ].label = f"{page.session.store.get('User_ID')}"
+            navigation_bar.destinations[1].label = (
+                f"{page.session.store.get('User_ID')}"
+            )
         elif page.route == "/login":
             page.views.append(login_page(page))
         elif page.route == "/settings" and page.session.store.get("User_ID") != "":
             page.views.append(settings_page(page))
             page.add(logout_container)
             page.navigation_bar = navigation_bar
-            navigation_bar.destinations[
-                1
-            ].label = f"{page.session.store.get('User_ID')}"
+            navigation_bar.destinations[1].label = (
+                f"{page.session.store.get('User_ID')}"
+            )
 
         page.update()
 
