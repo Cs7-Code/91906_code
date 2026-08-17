@@ -1,0 +1,71 @@
+{
+    "$defs": {
+        "Question": {
+            "properties": {
+                "question_no": {
+                    "title": "Question No",
+                    "type": "integer"
+                },
+                "question_sub_let": {
+                    "maxLength": 1,
+                    "title": "Question Sub Let",
+                    "type": "string"
+                },
+                "question_text": {
+                    "title": "Question Text",
+                    "type": "string"
+                },
+                "question_formula": {
+                    "anyOf": [
+                        {
+                            "type": "string"
+                        },
+                        {
+                            "type": "null"
+                        }
+                    ],
+                    "title": "Question Formula"
+                }
+            },
+            "required": [
+                "question_no",
+                "question_sub_let",
+                "question_text",
+                "question_formula"
+            ],
+            "title": "Question",
+            "type": "object"
+        }
+    },
+    "properties": {
+        "question_set_name": {
+            "title": "Question Set Name",
+            "type": "string"
+        },
+        "question_year": {
+            "anyOf": [
+                {
+                    "type": "string"
+                },
+                {
+                    "type": "null"
+                }
+            ],
+            "title": "Question Year"
+        },
+        "question_list": {
+            "items": {
+                "$ref": "#/$defs/Question"
+            },
+            "title": "Question List",
+            "type": "array"
+        }
+    },
+    "required": [
+        "question_set_name",
+        "question_year",
+        "question_list"
+    ],
+    "title": "QuestionSet",
+    "type": "object"
+}

@@ -3,8 +3,8 @@
     "",
     "\\src",
     "\\src\\assets",
-    "\\src\\dist"
+    "\\src\\question_sets"
   ],
-  "SelectedNode": "\\src\\dist\\Math_Revisor.exe",
+  "SelectedNode": "\\src\\main.py",
   "PreviewInSolutionExplorer": false
 }

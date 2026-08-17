@@ -1,7 +1,9 @@
+import json
 import os
-import urllib
+import pathlib
+
 import flet as ft
-from pydantic import Base64Str, BaseModel
+from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import JSON, Column, Field, Session, SQLModel, create_engine, select
 
@@ -117,7 +119,7 @@ class QuestionSet(BaseModel):
                 pass
 
             with open(f"{json_file_to_read}", "r", encoding="utf-8") as f:
-                output_from_file = f.read()
+                output_from_file = json.load(json_file_to_read)
 
             question_set = cls.model_validate_json(output_from_file)
 
@@ -143,187 +145,55 @@ def home_page(page: ft.Page) -> ft.View:
         f"Welcome, {user_name}!", theme_style=ft.TextThemeStyle.DISPLAY_SMALL
     )
 
+    question_sets_dir = pathlib.Path(__file__).parent / "question_sets"
+
+    try:
+        if not question_sets_dir.exists():
+            question_sets_dir.mkdir(parents=True, exist_ok=False)
+
+        json_path = question_sets_dir / "question_set_schema.json"
+
+        if not json_path.exists():
+            with open(json_path, "w") as f:
+                json_schema = QuestionSet.model_json_schema()
+                json.dump(json_schema, f, indent=4)
+        else:
+            raise FileExistsError
+
+    except FileExistsError:
+        question_set = []
+        for file_path in question_sets_dir.glob("*.json"):
+            question_set.append(str(QuestionSet.load_from_json(file_path)))
+
+        """question_cards = []
+        question_grid = ft.GridView(runs_count=4, spacing=4, controls=question_cards)   
+
+        for items in question_set:
+            new_card = ft.Card(
+            content=ft.Container(
+                padding=15,
+                content=ft.Column(
+                    controls=[
+                        ft.Text(items.question_set_name, size=20, weight="bold"),
+                        ft.Text(f"Year: {items.question_year or 'N/A'}"),
+                    ])))
+
+            question_cards.append(new_card)
+        
+            page.update()"""
+
     welcome_container = ft.Container(
         alignment=ft.Alignment.TOP_CENTER, content=welcome_message, expand=True
     )
 
-    question_set_grid = ft.GridView(
-        expand=False,
-        max_extent=180,
-        runs_count=3,
-        spacing=10,
-        run_spacing=10,
-    )
-
-    for file in os.listdir(os.path.dirname(__file__)):
-        if file.endswith(".json"):
-            qs = QuestionSet.load_from_json(file)
-            if isinstance(qs, QuestionSet):
-                question_set_grid.controls.append(
-                    ft.Container(
-                        width=150,
-                        height=150,
-                        bgcolor=ft.Colors.PRIMARY_CONTAINER,
-                        border_radius=8,
-                        alignment=ft.Alignment.CENTER,
-                        content=ft.Text(qs.question_set_name),
-                    )
-                )
-
-    grid_container = ft.Container(
-        height=300,
-        content=question_set_grid,
-    )
-
-    def action_on_click(e):
-        question_list: list[Question] = []
-
-        question_set_name_field = ft.TextField(label="Question Set Name")
-        question_set_year_field = ft.TextField(label="Year (Optional)")
-
-        question_preview_column = ft.Column(scroll="auto")
-
-        def open_add_question_dialog(e):
-            question_no_field = ft.TextField(
-                label="Question Number",
-                max_length=1,
-                input_filter=ft.NumbersOnlyInputFilter(),
-            )
-
-            question_sub_letter_field = ft.TextField(
-                label="Sub-letter (Optional)",
-                max_length=1,
-            )
-
-            question_text_field = ft.TextField(label="Question Text")
-
-            question_formula_preview = ft.Image(src="", width=300, height=300)
-
-            def update_formula(e):
-                encoded = urllib.parse.quote(question_formula_field.value)
-                question_formula_preview.src = (
-                    f"https://latex.codecogs.com/png.image?"
-                    f"\\dpi{{300}}\\bg_white {encoded}"
-                )
-                page.update()
-
-            question_formula_field = ft.TextField(
-                label="Formula (Optional)",
-                on_change=update_formula,
-            )
-
-            def submit_question(e):
-                try:
-                    new_question = Question(
-                        question_no=int(question_no_field.value),
-                        question_sub_let=question_sub_letter_field.value,
-                        question_text=question_text_field.value,
-                        question_formula=question_formula_preview.src,
-                    )
-
-                    question_list.append(new_question)
-
-                    question_preview_column.controls.append(
-                        ft.Text(
-                            f"{new_question.question_no}"
-                            f"{new_question.question_sub_let}. "
-                            f"{new_question.question_text}"
-                        )
-                    )
-
-                    page.pop_dialog()
-                    page.update()
-
-                except Exception as error:
-                    page.snack_bar = ft.SnackBar(ft.Text(f"Error: {error}"))
-                    page.snack_bar.open = True
-                    page.update()
-
-            add_q_dialog = ft.AlertDialog(
-                modal=True,
-                title=ft.Text("Add Question"),
-                content=ft.Column(
-                    [
-                        question_no_field,
-                        question_sub_letter_field,
-                        question_text_field,
-                        question_formula_field,
-                        question_formula_preview,
-                    ],
-                    tight=True,
-                ),
-                actions=[
-                    ft.TextButton("Cancel", on_click=lambda _: page.pop_dialog()),
-                    ft.FilledButton("Add", on_click=submit_question),
-                ],
-            )
-
-            page.show_dialog(add_q_dialog)
-
-        def save_question_set(e):
-            try:
-                new_question_set = QuestionSet(
-                    question_set_name=question_set_name_field.value,
-                    question_year=question_set_year_field.value,
-                    question_list=question_list,
-                )
-
-                new_question_set.save_to_json()
-
-                page.pop_dialog()
-                page.snack_bar = ft.SnackBar(ft.Text("Question Set Saved"))
-                page.snack_bar.open = True
-                page.update()
-
-            except Exception as error:
-                page.snack_bar = ft.SnackBar(ft.Text(f"Error: {error}"))
-                page.snack_bar.open = True
-                page.update()
-
-        question_dialog = ft.AlertDialog(
-            modal=True,
-            title=ft.Text("Create Question Set"),
-            content=ft.Column(
-                [
-                    question_set_name_field,
-                    question_set_year_field,
-                    ft.Divider(),
-                    ft.Text("Questions:", size=16, weight=ft.FontWeight.BOLD),
-                    question_preview_column,
-                    ft.FilledButton("Add Question", on_click=open_add_question_dialog),
-                ],
-                tight=True,
-                scroll="auto",
-            ),
-            actions=[
-                ft.TextButton("Cancel", on_click=lambda _: page.pop_dialog()),
-                ft.FilledButton("Save Set", on_click=save_question_set),
-            ],
-            actions_alignment=ft.MainAxisAlignment.END,
-        )
-
-        page.show_dialog(question_dialog)
-
-    add_question_button = ft.FloatingActionButton(
-        icon=ft.Icons.ADD,
-        mouse_cursor=ft.MouseCursor.CLICK,
-        tooltip="Add Question Set",
-        on_click=action_on_click,
-    )
-
-    add_question_container = ft.Container(
-        alignment=ft.Alignment.BOTTOM_RIGHT, content=add_question_button, expand=True
-    )
-
     return ft.View(
         route="/home",
-        controls=[welcome_container, grid_container, add_question_container],
+        controls=[welcome_container],
     )
-
-
 
 
 def login_page(page: ft.Page) -> ft.View:
+
     # Page Title
 
     page.title = "Login"
@@ -488,7 +358,7 @@ def login_page(page: ft.Page) -> ft.View:
                 engine, user_name, user_id, user_pass
             )
 
-            def close_dialog(e):
+            def close_dialog():
                 page.pop_dialog()
 
             if is_user_creation_success != True:
@@ -506,6 +376,7 @@ def login_page(page: ft.Page) -> ft.View:
                 return False
             else:
                 page.pop_dialog()
+                page.show_dialog(ft.SnackBar(content=ft.Text("User Created Succesfully! Please re-enter your login information above to login in "), show_close_icon=True, duration=10000))
 
         def create_user_verify(e):
             try:
@@ -583,6 +454,11 @@ def login_page(page: ft.Page) -> ft.View:
         content=ft.Container(padding=10, content=login_fields),
         opacity=0.65,
     )
+
+    db_path = pathlib.Path(__file__).parent / "users.db"
+
+    if not db_path.exists():
+        on_create_user_button_click()
 
     return ft.View(
         route="/login",

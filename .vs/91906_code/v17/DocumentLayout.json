@@ -5,6 +5,14 @@
     {
       "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\School\\Desktop\\91906_code\\src\\main.py||{8B382828-6202-11D1-8870-0000F87579D2}",
       "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\main.py||{8B382828-6202-11D1-8870-0000F87579D2}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\School\\Desktop\\91906_code\\src\\question_sets\\question_set_schema.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\question_sets\\question_set_schema.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\School\\Desktop\\91906_code\\src\\question_sets\\test.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:src\\question_sets\\test.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}"
     }
   ],
   "DocumentGroupContainers": [
@@ -14,7 +22,7 @@
       "DocumentGroups": [
         {
           "DockedWidth": 200,
-          "SelectedChildIndex": 3,
+          "SelectedChildIndex": 5,
           "Children": [
             {
               "$type": "Bookmark",
@@ -30,13 +38,39 @@
             },
             {
               "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "test.json",
+              "DocumentMoniker": "C:\\Users\\School\\Desktop\\91906_code\\src\\question_sets\\test.json",
+              "RelativeDocumentMoniker": "src\\question_sets\\test.json",
+              "ToolTip": "C:\\Users\\School\\Desktop\\91906_code\\src\\question_sets\\test.json",
+              "RelativeToolTip": "src\\question_sets\\test.json",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAQAAAAUAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001642|",
+              "WhenOpened": "2026-08-17T00:11:58.265Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "question_set_schema.json",
+              "DocumentMoniker": "C:\\Users\\School\\Desktop\\91906_code\\src\\question_sets\\question_set_schema.json",
+              "RelativeDocumentMoniker": "src\\question_sets\\question_set_schema.json",
+              "ToolTip": "C:\\Users\\School\\Desktop\\91906_code\\src\\question_sets\\question_set_schema.json",
+              "RelativeToolTip": "src\\question_sets\\question_set_schema.json",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAgAAAAbAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001642|",
+              "WhenOpened": "2026-08-17T00:11:07.602Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
               "DocumentIndex": 0,
               "Title": "main.py",
               "DocumentMoniker": "C:\\Users\\School\\Desktop\\91906_code\\src\\main.py",
               "RelativeDocumentMoniker": "src\\main.py",
               "ToolTip": "C:\\Users\\School\\Desktop\\91906_code\\src\\main.py",
               "RelativeToolTip": "src\\main.py",
-              "ViewState": "AgIAAI0DAAAAAAAAAAAQwJwDAAAnAAAAAAAAAA==",
+              "ViewState": "AgIAABEDAAAAAAAAAAAQwC0DAAAbAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001001|",
               "WhenOpened": "2026-07-21T05:27:11.699Z",
               "EditorCaption": ""
