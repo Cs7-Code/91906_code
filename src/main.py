@@ -1,8 +1,10 @@
 import json
 import os
 import pathlib
+import re
 
 import flet as ft
+import pdfplumber
 from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import JSON, Column, Field, Session, SQLModel, create_engine, select
@@ -14,6 +16,8 @@ class Name(BaseModel):
 
 
 class User(SQLModel, table=True):
+    __table_args__ = {"extend_existing": True}
+
     id: int | None = Field(primary_key=True)
     user_name: Name = Field(sa_column=Column(JSON))
     user_id: int = Field(ge=1000, le=9999, unique=True, nullable=False)
@@ -47,18 +51,14 @@ class User(SQLModel, table=True):
             user = session.exec(statement).first()
 
             match value_to_change:
-                # case "User Name" if type(new_value) is str:
-                #     user.name = new_value
-                case "ID" if type(new_value) is int:
+                case "ID" if isinstance(new_value, int):
                     user.user_id = new_value
-                case "Password" if type(new_value) is str:
-                    user = session.exec(statement).first()
+                case "Password" if isinstance(new_value, str):
                     user.user_pass = new_value
                 case _:
                     return False
 
             session.commit()
-
             return True
 
     @classmethod
@@ -68,9 +68,9 @@ class User(SQLModel, table=True):
                 User.user_id == user_id_ent, User.user_pass == user_pass_ent
             )
             user = session.exec(statement).first()
-
-            session.delete(user)
-            session.commit()
+            if user is not None:
+                session.delete(user)
+                session.commit()
 
     @classmethod
     def login(cls, engine, user_id_ent: int, user_pass_ent: str) -> bool:
@@ -79,17 +79,13 @@ class User(SQLModel, table=True):
                 cls.user_id == user_id_ent, cls.user_pass == user_pass_ent
             )
             user_exists = session.exec(statement).first()
-
             return user_exists is not None
 
     @staticmethod
     def db_config():
-
         db_file_name = os.path.join(os.path.dirname(__file__), "users.db")
-
         engine = create_engine(f"sqlite:///{db_file_name}")
         SQLModel.metadata.create_all(engine)
-
         return engine
 
 
@@ -98,7 +94,7 @@ class Question(BaseModel):
     question_sub_let: str = Field(max_length=1)
     question_text: str
     question_formula: str | None
-    # question_image: Base64Str | None = Field(deprecated=True)
+    correct_answer: str | None = None
 
 
 class QuestionSet(BaseModel):
@@ -115,19 +111,134 @@ class QuestionSet(BaseModel):
         try:
             if not json_file_to_read.endswith(".json"):
                 json_file_to_read = f"{json_file_to_read}.json"
-            else:
-                pass
 
-            with open(f"{json_file_to_read}", "r", encoding="utf-8") as f:
-                output_from_file = json.load(json_file_to_read)
+            with open(json_file_to_read, "r", encoding="utf-8") as f:
+                output_from_file = json.load(f)
 
-            question_set = cls.model_validate_json(output_from_file)
-
+            question_set = cls.model_validate(output_from_file)
             return question_set
         except ValueError:
             return "Inputed File invaild"
         except FileNotFoundError:
             return "File couldn't be found"
+
+
+QUESTION_WORD_TO_NUMBER = {
+    "ONE": 1,
+    "TWO": 2,
+    "THREE": 3,
+    "FOUR": 4,
+    "FIVE": 5,
+    "SIX": 6,
+    "SEVEN": 7,
+    "EIGHT": 8,
+    "NINE": 9,
+    "TEN": 10,
+}
+
+SUBPART_PATTERN = re.compile(r"^\(?([a-d])\)\s*(.*)$", re.IGNORECASE)
+QUESTION_HEADER_PATTERN = re.compile(r"^QUESTION\s+([A-Z]+)", re.IGNORECASE)
+SCHEDULE_Q_PATTERN = re.compile(r"Q?\s*(\d+)\s*\(?([a-d])\)?", re.IGNORECASE)
+
+
+def parse_ncea_pdf(pdf_path: str) -> QuestionSet:
+    questions: list[Question] = []
+    current_question: Question | None = None
+    current_question_no: int | None = None
+
+    with pdfplumber.open(pdf_path) as pdf:
+        for page in pdf.pages:
+            text = page.extract_text() or ""
+            lines = text.split("\n")
+
+            for line in lines:
+                stripped = line.strip()
+                if not stripped:
+                    continue
+
+                header_match = QUESTION_HEADER_PATTERN.match(stripped)
+                if header_match:
+                    word = header_match.group(1).upper()
+                    current_question_no = QUESTION_WORD_TO_NUMBER.get(word)
+                    current_question = None
+                    continue
+
+                sub_match = SUBPART_PATTERN.match(stripped)
+                if sub_match and current_question_no is not None:
+                    if current_question is not None:
+                        questions.append(current_question)
+
+                    sub_letter = sub_match.group(1).lower()
+                    text_part = sub_match.group(2)
+
+                    current_question = Question(
+                        question_no=current_question_no,
+                        question_sub_let=sub_letter,
+                        question_text=text_part,
+                        question_formula=None,
+                    )
+                else:
+                    if current_question is not None:
+                        current_question.question_text += " " + stripped
+
+        if current_question is not None:
+            questions.append(current_question)
+
+    question_set_name = pathlib.Path(pdf_path).stem
+
+    return QuestionSet(
+        question_set_name=question_set_name,
+        question_year=None,
+        question_list=questions,
+    )
+
+
+def parse_mark_schedule(pdf_path: str) -> dict[tuple[int, str], str]:
+    answers: dict[tuple[int, str], str] = {}
+    current_key: tuple[int, str] | None = None
+
+    with pdfplumber.open(pdf_path) as pdf:
+        for page in pdf.pages:
+            text = page.extract_text() or ""
+            lines = text.split("\n")
+
+            for line in lines:
+                stripped = line.strip()
+                if not stripped:
+                    continue
+
+                match = SCHEDULE_Q_PATTERN.match(stripped.replace(" ", ""))
+                if match:
+                    q_no = int(match.group(1))
+                    sub = match.group(2).lower()
+                    current_key = (q_no, sub)
+                    continue
+
+                if current_key is not None:
+                    if current_key not in answers:
+                        answers[current_key] = stripped
+                    else:
+                        answers[current_key] += " " + stripped
+
+    return answers
+
+
+def normalize_answer(ans: str) -> str:
+    return ans.strip().lower().replace(" ", "")
+
+
+def is_equivalent(user_answer: str, correct_answer: str | None) -> bool:
+    if correct_answer is None:
+        return False
+
+    try:
+        u = float(user_answer)
+        c = float(correct_answer)
+        return abs(u - c) <= 1e-2
+    except ValueError:
+        pass
+
+    return normalize_answer(user_answer) == normalize_answer(correct_answer)
 
 
 def home_page(page: ft.Page) -> ft.View:
@@ -147,43 +258,102 @@ def home_page(page: ft.Page) -> ft.View:
 
     question_sets_dir = pathlib.Path(__file__).parent / "question_sets"
 
-    try:
-        if not question_sets_dir.exists():
-            question_sets_dir.mkdir(parents=True, exist_ok=False)
+    if not question_sets_dir.exists():
+        question_sets_dir.mkdir(parents=True, exist_ok=True)
 
-        json_path = question_sets_dir / "question_set_schema.json"
+    json_path = question_sets_dir / "question_set_schema.json"
 
-        if not json_path.exists():
-            with open(json_path, "w") as f:
-                json_schema = QuestionSet.model_json_schema()
-                json.dump(json_schema, f, indent=4)
-        else:
-            raise FileExistsError
+    if not json_path.exists():
+        with open(json_path, "w") as f:
+            json_schema = QuestionSet.model_json_schema()
+            json.dump(json_schema, f, indent=4)
 
-    except FileExistsError:
-        question_set = []
-        for file_path in question_sets_dir.glob("*.json"):
-            question_set.append(str(QuestionSet.load_from_json(file_path)))
+    exam_path_text = ft.Text("No exam selected")
+    schedule_path_text = ft.Text("No schedule selected")
 
-        """question_cards = []
-        question_grid = ft.GridView(runs_count=4, spacing=4, controls=question_cards)   
+    def on_exam_result(e: ft.FilePickerResultEvent):
+        if e.files and len(e.files) > 0:
+            exam_file = e.files[0]
+            page.session.store.set("Exam_PDF", exam_file.path)
+            exam_path_text.value = exam_file.name
+            page.update()
 
-        for items in question_set:
-            new_card = ft.Card(
-            content=ft.Container(
-                padding=15,
-                content=ft.Column(
+    def on_schedule_result(e: ft.FilePickerResultEvent):
+        if e.files and len(e.files) > 0:
+            schedule_file = e.files[0]
+            page.session.store.set("Schedule_PDF", schedule_file.path)
+            schedule_path_text.value = schedule_file.name
+            page.update()
+
+    exam_picker = ft.FilePicker(on_result=on_exam_result)
+    schedule_picker = ft.FilePicker(on_result=on_schedule_result)
+
+    page.overlay.append(exam_picker)
+    page.overlay.append(schedule_picker)
+
+    async def select_exam(e):
+        await exam_picker.pick_files(allow_multiple=False)
+
+    async def select_schedule(e):
+        await schedule_picker.pick_files(allow_multiple=False)
+
+    def open_upload_dialog(e):
+        def close_dialog(e):
+            page.pop_dialog()
+
+        def start_quiz(e):
+            exam_path = page.session.store.get("Exam_PDF")
+            schedule_path = page.session.store.get("Schedule_PDF")
+            if not exam_path or not schedule_path:
+                return
+            page.pop_dialog()
+            page.navigate("/quiz")
+
+        dialog_content = ft.Column(
+            controls=[
+                ft.Text("Select NCEA Exam Paper and Marking Schedule"),
+                ft.Row(
                     controls=[
-                        ft.Text(items.question_set_name, size=20, weight="bold"),
-                        ft.Text(f"Year: {items.question_year or 'N/A'}"),
-                    ])))
+                        ft.FilledButton("Select Exam PDF", on_click=select_exam),
+                        exam_path_text,
+                    ]
+                ),
+                ft.Row(
+                    controls=[
+                        ft.FilledButton(
+                            "Select Schedule PDF", on_click=select_schedule
+                        ),
+                        schedule_path_text,
+                    ]
+                ),
+            ]
+        )
 
-            question_cards.append(new_card)
-        
-            page.update()"""
+        upload_dialog = ft.AlertDialog(
+            modal=False,
+            title=ft.Text("Create Quiz from NCEA Paper"),
+            content=dialog_content,
+            actions=[
+                ft.FilledButton("Start Quiz", on_click=start_quiz),
+                ft.FilledButton("Close", on_click=close_dialog),
+            ],
+        )
+
+        page.show_dialog(upload_dialog)
+
+    upload_button = ft.FilledButton(
+        content=ft.Text("Create Quiz from NCEA Paper"), on_click=open_upload_dialog
+    )
 
     welcome_container = ft.Container(
-        alignment=ft.Alignment.TOP_CENTER, content=welcome_message, expand=True
+        alignment=ft.Alignment.TOP_CENTER,
+        content=ft.Column(
+            controls=[
+                welcome_message,
+                upload_button,
+            ]
+        ),
+        expand=True,
     )
 
     return ft.View(
@@ -193,14 +363,9 @@ def home_page(page: ft.Page) -> ft.View:
 
 
 def login_page(page: ft.Page) -> ft.View:
-
-    # Page Title
-
     page.title = "Login"
 
     login_title = ft.Text("Login", theme_style=ft.TextThemeStyle.DISPLAY_SMALL)
-
-    # User ID Fields
 
     user_id_icon = ft.Icon(
         ft.Icons.ACCOUNT_CIRCLE_ROUNDED, color=ft.Colors.PRIMARY, size=40
@@ -217,8 +382,6 @@ def login_page(page: ft.Page) -> ft.View:
         [user_id_icon, user_id_text_field], tight=True, tooltip="User ID"
     )
 
-    # Password fields
-
     user_password_icon = ft.Icon(ft.Icons.PASSWORD, color=ft.Colors.PRIMARY, size=40)
 
     user_password_text_field = ft.TextField(
@@ -231,8 +394,6 @@ def login_page(page: ft.Page) -> ft.View:
         tooltip="Password/Pin",
     )
 
-    # Login button
-
     def login_on_click(e):
         try:
             if len(user_id_text_field.value) != 5:
@@ -244,7 +405,6 @@ def login_page(page: ft.Page) -> ft.View:
                 raise ValueError
 
         except ValueError:
-
             def close_dialog(e):
                 page.pop_dialog()
 
@@ -262,7 +422,6 @@ def login_page(page: ft.Page) -> ft.View:
             return False
 
         engine = User.db_config()
-
         user_password_ent = user_password_text_field.value
 
         login_success = User.login(engine, user_id_ent, user_password_ent)
@@ -271,7 +430,6 @@ def login_page(page: ft.Page) -> ft.View:
             page.session.store.set("User_ID", user_id_ent)
             page.navigate("/home")
         else:
-
             def close_dialog(e):
                 page.pop_dialog()
 
@@ -293,14 +451,8 @@ def login_page(page: ft.Page) -> ft.View:
         def close_dialog(e):
             page.pop_dialog()
 
-        # Name fields
-        create_user_fname_text_field = ft.TextField(
-            label="First Name",
-        )
-
-        create_user_lname_text_field = ft.TextField(
-            label="Last Name",
-        )
+        create_user_fname_text_field = ft.TextField(label="First Name")
+        create_user_lname_text_field = ft.TextField(label="Last Name")
 
         name_column = ft.Column(
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
@@ -318,7 +470,6 @@ def login_page(page: ft.Page) -> ft.View:
             tooltip="Name",
         )
 
-        # User ID Fields
         create_user_id_text_field = ft.TextField(
             label="User ID",
             max_length=5,
@@ -330,7 +481,6 @@ def login_page(page: ft.Page) -> ft.View:
             [user_id_icon, create_user_id_text_field], tight=True, tooltip="User ID"
         )
 
-        # Password fields
         create_user_password_text_field = ft.TextField(
             label="Password/Pin", password=True, can_reveal_password=True
         )
@@ -361,7 +511,7 @@ def login_page(page: ft.Page) -> ft.View:
             def close_dialog():
                 page.pop_dialog()
 
-            if is_user_creation_success != True:
+            if not is_user_creation_success:
                 unique_fail_dialog = ft.AlertDialog(
                     modal=False,
                     title=ft.Text("User Information entered is not unique"),
@@ -376,7 +526,15 @@ def login_page(page: ft.Page) -> ft.View:
                 return False
             else:
                 page.pop_dialog()
-                page.show_dialog(ft.SnackBar(content=ft.Text("User Created Succesfully! Please re-enter your login information above to login in "), show_close_icon=True, duration=10000))
+                page.show_dialog(
+                    ft.SnackBar(
+                        content=ft.Text(
+                            "User Created Succesfully! Please re-enter your login information above to login in "
+                        ),
+                        show_close_icon=True,
+                        duration=10000,
+                    )
+                )
 
         def create_user_verify(e):
             try:
@@ -395,7 +553,6 @@ def login_page(page: ft.Page) -> ft.View:
                     raise ValueError
 
             except ValueError:
-
                 def close_dialog(e):
                     page.pop_dialog()
 
@@ -442,8 +599,6 @@ def login_page(page: ft.Page) -> ft.View:
 
     actions_row = ft.Row([login_button, create_user_button], tight=True)
 
-    # Login fields
-
     login_fields = ft.Column(
         horizontal_alignment=ft.CrossAxisAlignment.CENTER,
         controls=[login_title, user_name_field, user_password_field, actions_row],
@@ -458,12 +613,12 @@ def login_page(page: ft.Page) -> ft.View:
     db_path = pathlib.Path(__file__).parent / "users.db"
 
     if not db_path.exists():
-        on_create_user_button_click()
+        on_create_user_button_click(None)
 
     return ft.View(
         route="/login",
-        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        horizontal_alignment=ft.MainAxisAlignment.CENTER,
+        vertical_alignment=ft.MainAxisAlignment.CENTER,
         controls=[login_card],
     )
 
@@ -490,36 +645,32 @@ def settings_page(page: ft.Page) -> ft.View:
         controls=[user_id_icon, user_id_text_field], tight=True, tooltip="User ID"
     )
 
-    # Password fields
-
     user_password_icon = ft.Icon(ft.Icons.PASSWORD, color=ft.Colors.SECONDARY, size=40)
 
     def password_change(e):
         def close_dialog(e):
             page.pop_dialog()
 
-        user_password_icon = ft.Icon(
+        user_password_icon_inner = ft.Icon(
             ft.Icons.PASSWORD, color=ft.Colors.PRIMARY, size=40
         )
 
-        # Current Password Field
         current_password_text_field = ft.TextField(
             label="Current Password/Pin", password=True, can_reveal_password=True
         )
 
         current_password_field = ft.Row(
-            [user_password_icon, current_password_text_field],
+            [user_password_icon_inner, current_password_text_field],
             tight=True,
             tooltip="Current Password/Pin",
         )
 
-        # Password fields
         new_password_text_field = ft.TextField(
             label="Password/Pin", password=True, can_reveal_password=True
         )
 
         new_password_field = ft.Row(
-            [user_password_icon, new_password_text_field],
+            [user_password_icon_inner, new_password_text_field],
             tight=True,
             tooltip="Password/Pin",
         )
@@ -532,12 +683,8 @@ def settings_page(page: ft.Page) -> ft.View:
 
         new_password_fields = ft.Container(content=new_password_column, padding=10)
 
-        def close_change_dialog(e):
-            page.pop_dialog()
-
         def on_close(pass_values):
             engine = User.db_config()
-
             User.update_user_info(
                 engine,
                 page.session.store.get("User_ID"),
@@ -548,7 +695,7 @@ def settings_page(page: ft.Page) -> ft.View:
 
         def change_password_verify(e):
             try:
-                if current_password_text_field.value == "" or new_password_field == "":
+                if current_password_text_field.value == "" or new_password_text_field.value == "":
                     raise ValueError
 
                 pass_values = {
@@ -569,7 +716,6 @@ def settings_page(page: ft.Page) -> ft.View:
                         raise ValueError
 
             except ValueError:
-
                 def close_dialog(e):
                     page.pop_dialog()
 
@@ -613,11 +759,10 @@ def settings_page(page: ft.Page) -> ft.View:
         user_pass = user.user_pass
 
     def show_pass(e):
-
-        if user_pass_textfield.password == True:
+        if user_pass_textfield.password:
             user_reveal_pass.icon = ft.Icons.VISIBILITY_OFF_ROUNDED
 
-            user_password_icon = ft.Icon(
+            user_password_icon_inner = ft.Icon(
                 ft.Icons.PASSWORD, color=ft.Colors.SECONDARY, size=40
             )
 
@@ -626,7 +771,7 @@ def settings_page(page: ft.Page) -> ft.View:
             )
 
             password_field = ft.Row(
-                [user_password_icon, password_text_field],
+                [user_password_icon_inner, password_text_field],
                 tight=True,
                 tooltip="Current Password/Pin",
             )
@@ -657,7 +802,6 @@ def settings_page(page: ft.Page) -> ft.View:
                             page.update()
 
                 except ValueError:
-
                     def close_dialog(e):
                         page.pop_dialog()
 
@@ -732,12 +876,113 @@ def settings_page(page: ft.Page) -> ft.View:
     return settings_view
 
 
+def quiz_page(page: ft.Page) -> ft.View:
+    exam_path = page.session.store.get("Exam_PDF")
+    schedule_path = page.session.store.get("Schedule_PDF")
+
+    question_set = parse_ncea_pdf(exam_path)
+    answers = parse_mark_schedule(schedule_path)
+
+    for q in question_set.question_list:
+        key = (q.question_no, q.question_sub_let)
+        if key in answers:
+            q.correct_answer = answers[key]
+
+    page.title = f"Quiz: {question_set.question_set_name}"
+
+    current_index = 0
+    score = 0
+
+    question_text = ft.Text("", size=20, weight="bold")
+    answer_field = ft.TextField(label="Your Answer", multiline=True)
+    feedback_text = ft.Text("", size=16)
+
+    time_left = 900
+    timer_text = ft.Text(f"Time: {time_left}", size=18)
+
+    def load_question():
+        nonlocal current_index
+        if current_index < len(question_set.question_list):
+            q = question_set.question_list[current_index]
+            question_text.value = f"{q.question_no}{q.question_sub_let}. {q.question_text}"
+            feedback_text.value = ""
+            answer_field.value = ""
+        else:
+            finish_quiz()
+        page.update()
+
+    def finish_quiz():
+        dialog = ft.AlertDialog(
+            modal=False,
+            title=ft.Text("Quiz Complete"),
+            content=ft.Text(
+                f"Your score: {score}/{len(question_set.question_list)}"
+            ),
+            actions=[ft.FilledButton("OK", on_click=lambda e: page.pop_dialog())],
+        )
+        page.show_dialog(dialog)
+
+    def submit_answer(e):
+        nonlocal current_index, score
+        if current_index < len(question_set.question_list):
+            q = question_set.question_list[current_index]
+            user_ans = answer_field.value
+            if is_equivalent(user_ans, q.correct_answer):
+                score += 1
+                feedback_text.value = "Correct!"
+            else:
+                if q.correct_answer is not None:
+                    feedback_text.value = f"Incorrect. Correct answer: {q.correct_answer}"
+                else:
+                    feedback_text.value = "No official answer available."
+            current_index += 1
+            load_question()
+        page.update()
+
+    def tick_timer():
+        nonlocal time_left
+        time_left -= 1
+        if time_left <= 0:
+            time_left = 0
+            timer_text.value = f"Time: {time_left}"
+            page.update()
+            finish_quiz()
+        else:
+            timer_text.value = f"Time: {time_left}"
+            page.update()
+
+    page.run_interval(tick_timer, 1000)
+
+    submit_button = ft.FilledButton("Submit", on_click=submit_answer)
+
+    load_question()
+
+    quiz_column = ft.Column(
+        controls=[
+            timer_text,
+            question_text,
+            answer_field,
+            submit_button,
+            feedback_text,
+        ]
+    )
+
+    return ft.View(
+        route="/quiz",
+        controls=[
+            ft.Container(
+                alignment=ft.Alignment.TOP_CENTER,
+                content=quiz_column,
+                expand=True,
+            )
+        ],
+    )
+
+
 def main(page: ft.Page):
     page.theme_mode = ft.ThemeMode.DARK
-
     page.horizontal_alignment = ft.MainAxisAlignment.CENTER
     page.vertical_alignment = ft.MainAxisAlignment.CENTER
-
     page.padding = 10
 
     def logout(e):
@@ -804,13 +1049,17 @@ def main(page: ft.Page):
             navigation_bar.destinations[1].label = (
                 f"{page.session.store.get('User_ID')}"
             )
+        elif page.route == "/quiz" and page.session.store.get("User_ID") != "":
+            page.views.append(quiz_page(page))
+            page.navigation_bar = navigation_bar
+            navigation_bar.destinations[1].label = (
+                f"{page.session.store.get('User_ID')}"
+            )
 
         page.update()
 
     page.on_route_change = on_route_change
-
     on_route_change()
-
     page.navigate("/login")
 
 

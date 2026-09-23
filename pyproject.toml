@@ -12,8 +12,10 @@ dependencies = [
     "flet-math>=0.1.1",
     "flet[all]>=0.86.1",
     "matplotlib>=3.10.9",
+    "pdfplumber>=0.11.10",
     "pydantic>=2.13.4",
     "pyinstaller>=6.22.1",
+    "sqlalchemy>=2.0.52",
     "sqlmodel>=0.0.39",
 ]
 

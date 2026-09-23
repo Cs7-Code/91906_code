@@ -1,9 +1,7 @@
 {
   "ExpandedNodes": [
     "",
-    "\\src",
-    "\\src\\assets",
-    "\\src\\question_sets"
+    "\\src"
   ],
   "SelectedNode": "\\src\\main.py",
   "PreviewInSolutionExplorer": false
