@@ -1,0 +1,336 @@
+{
+    "question_set_name": "91578_2025",
+    "question_year": "2025",
+    "question_list": [
+        {
+            "question_no": 2,
+            "question_sub_let": "a",
+            "question_text": "Differentiate f (x) = (5x3 – 2x +1)5.\nYou do not need to simplify your answer.",
+            "question_formula": "f (x) = (5x3 – 2x +1)5",
+            "question_images": [],
+            "correct_answer": "",
+            "acceptable_answers": [],
+            "answer_working": ""
+        },
+        {
+            "question_no": 2,
+            "question_sub_let": "b",
+            "question_text": "The temperature of an oven is given by the formula \n,\nC\nt\nt\n60\n5\n15\n=\n+\n+\ngiven that 0 < t ≤ 12,\nwhere C is the temperature of the oven, in °C, and t is the time, in minutes, after the oven has \nbeen switched off.\nFind the rate of change of the temperature of the oven 4 minutes after the oven was switched off.\nYou must use calculus and show any derivatives that you need to find when solving this problem.",
+            "question_formula": null,
+            "question_images": [],
+            "correct_answer": "",
+            "acceptable_answers": [],
+            "answer_working": ""
+        },
+        {
+            "question_no": 2,
+            "question_sub_let": "c",
+            "question_text": "What is the gradient of the normal to the curve when \n.\nr\nsin\ncos\ny\nx\nx\nx\n4\nwhen\n3\n=\n=\nYou must use calculus and show any derivatives that you need to find when solving this problem.\nCalculus 91578, 2025",
+            "question_formula": null,
+            "question_images": [],
+            "correct_answer": "",
+            "acceptable_answers": [],
+            "answer_working": ""
+        },
+        {
+            "question_no": 3,
+            "question_sub_let": "d",
+            "question_text": "The graph below shows the function ( )\nf x\nx\ne x\n2\n2\n=\n+\n and the tangent to the curve when x = 1.\ny\ntangent",
+            "question_formula": null,
+            "question_images": [],
+            "correct_answer": "",
+            "acceptable_answers": [],
+            "answer_working": ""
+        },
+        {
+            "question_no": 3,
+            "question_sub_let": "y",
+            "question_text": "= x2 + e2x\nx\nP\nFind the point P, the x-intercept of this tangent.\nYou must use calculus and show any derivatives that you need to find when solving this problem.\nCalculus 91578, 2025",
+            "question_formula": null,
+            "question_images": [],
+            "correct_answer": "",
+            "acceptable_answers": [],
+            "answer_working": ""
+        },
+        {
+            "question_no": 4,
+            "question_sub_let": "e",
+            "question_text": "A curve is defined by the pair of parametric equations:",
+            "question_formula": null,
+            "question_images": [],
+            "correct_answer": "",
+            "acceptable_answers": [],
+            "answer_working": ""
+        },
+        {
+            "question_no": 4,
+            "question_sub_let": "x",
+            "question_text": "= 3t2 + 6t + 1 and y = 2t3\nFind the coordinates of any points of inflection on this curve that are also stationary points.\nYou may assume that any inflection point(s) found are actually inflection points.\nYou must use calculus and show any derivatives that you need to find when solving this problem.\nCalculus 91578, 2025",
+            "question_formula": "y = 2t3",
+            "question_images": [],
+            "correct_answer": "",
+            "acceptable_answers": [],
+            "answer_working": ""
+        },
+        {
+            "question_no": 5,
+            "question_sub_let": "a",
+            "question_text": "Differentiate ( )\n(\n)\nln\nf x\nx\nx\nx\n7\n3\n2\n5\n3\n2\n=\n-\n-\n+\nYou do not need to simplify your answer.",
+            "question_formula": null,
+            "question_images": [],
+            "correct_answer": "",
+            "acceptable_answers": [],
+            "answer_working": ""
+        },
+        {
+            "question_no": 5,
+            "question_sub_let": "b",
+            "question_text": "The depth of water, in metres, in a particular harbour, is given by the formula\n(\n)\nP\nt\nt\n30\n5\ne t\n2\n=\n-\n- ,\nwhere t is measured in hours and 0 < t ≤ 4.\nShow whether the depth of the water in the harbour is increasing or decreasing after 2 hours.\nYou must use calculus and show any derivatives that you need to find when solving this problem.\nCalculus 91578, 2025",
+            "question_formula": null,
+            "question_images": [],
+            "correct_answer": "",
+            "acceptable_answers": [],
+            "answer_working": ""
+        },
+        {
+            "question_no": 6,
+            "question_sub_let": "c",
+            "question_text": "There are two tangents to the curve \n( )\ny\nf x\nx",
+            "question_formula": null,
+            "question_images": [],
+            "correct_answer": "",
+            "acceptable_answers": [],
+            "answer_working": ""
+        },
+        {
+            "question_no": 4,
+            "question_sub_let": "",
+            "question_text": "y",
+            "question_formula": null,
+            "question_images": [],
+            "correct_answer": "",
+            "acceptable_answers": [],
+            "answer_working": ""
+        },
+        {
+            "question_no": 5,
+            "question_sub_let": "y",
+            "question_text": "= f (x)",
+            "question_formula": null,
+            "question_images": [],
+            "correct_answer": "",
+            "acceptable_answers": [],
+            "answer_working": ""
+        },
+        {
+            "question_no": 5,
+            "question_sub_let": "x",
+            "question_text": "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n–10 –9\n–8\n–7\n–6\n–5\n–4\n–3\n–2\n–1\n–5\n–10",
+            "question_formula": null,
+            "question_images": [],
+            "correct_answer": "",
+            "acceptable_answers": [],
+            "answer_working": ""
+        },
+        {
+            "question_no": 5,
+            "question_sub_let": "y",
+            "question_text": "= f (x)\n–15\n–20\n–25\n–30\n–35\n–40\nFind the coordinates of the two points of contact of these tangents with the curve y = f (x).\nYou must use calculus and show any derivatives that you need to find when solving this problem.\nCalculus 91578, 2025",
+            "question_formula": "y = f (x)",
+            "question_images": [],
+            "correct_answer": "",
+            "acceptable_answers": [],
+            "answer_working": ""
+        },
+        {
+            "question_no": 7,
+            "question_sub_let": "d",
+            "question_text": "Find the equation of the tangent to the graph defined by the pair of equations:\nsec\ntan\nx\nt\ny\nt\n2\n5\nand\n=\n=\n, at the point on the graph where \nr\nt\n6\n=\n.\nYou must use calculus and show any derivatives that you need to find when solving this problem.\nCalculus 91578, 2025",
+            "question_formula": null,
+            "question_images": [],
+            "correct_answer": "",
+            "acceptable_answers": [],
+            "answer_working": ""
+        },
+        {
+            "question_no": 8,
+            "question_sub_let": "e",
+            "question_text": "The radius of curvature of a function is a measure of how much the curve is bending at a given \npoint.\n2\n2\n3\n+\nd\nc\nm n\n1\nd\nd\nThe formula to calculate the radius of curvature is given by p\nx\ny\n=",
+            "question_formula": null,
+            "question_images": [],
+            "correct_answer": "",
+            "acceptable_answers": [],
+            "answer_working": ""
+        },
+        {
+            "question_no": 2,
+            "question_sub_let": "d",
+            "question_text": "d\ny",
+            "question_formula": null,
+            "question_images": [],
+            "correct_answer": "",
+            "acceptable_answers": [],
+            "answer_working": ""
+        },
+        {
+            "question_no": 2,
+            "question_sub_let": "",
+            "question_text": "x\nFind the radius of curvature for the curve \n.\nr\ncos\ny\nx\nx\n2\n3\nwhen\n2\n=\n=\n^\nh\nYou must use calculus and show any derivatives that you need to find when solving this problem.\nCalculus 91578, 2025",
+            "question_formula": null,
+            "question_images": [],
+            "correct_answer": "",
+            "acceptable_answers": [],
+            "answer_working": ""
+        },
+        {
+            "question_no": 9,
+            "question_sub_let": "a",
+            "question_text": "The graph below shows the function y = f (x).\ny",
+            "question_formula": "y = f (x)",
+            "question_images": [],
+            "correct_answer": "",
+            "acceptable_answers": [],
+            "answer_working": ""
+        },
+        {
+            "question_no": 1,
+            "question_sub_let": "",
+            "question_text": "x\n–1\n–2\n–3\n–4\n–5\n–6\n–7\n–8\n–9\n–10\n2\n3\n4\n5\n6\n7\n8\n9\n10",
+            "question_formula": null,
+            "question_images": [],
+            "correct_answer": "",
+            "acceptable_answers": [],
+            "answer_working": ""
+        },
+        {
+            "question_no": 1,
+            "question_sub_let": "i",
+            "question_text": "Find the value(s) of x where f (x) is not differentiable.\n(ii) \nFind the value(s) of x where f ' (x) = 0.\n(iii) What is the value of \n( )\nlim f x\nx\n2\n\" -\n?\nState clearly if the value does not exist.\nCalculus 91578, 2025",
+            "question_formula": null,
+            "question_images": [],
+            "correct_answer": "",
+            "acceptable_answers": [],
+            "answer_working": ""
+        },
+        {
+            "question_no": 10,
+            "question_sub_let": "b",
+            "question_text": "A curve has equation \n.\nln\ny\nx",
+            "question_formula": null,
+            "question_images": [],
+            "correct_answer": "",
+            "acceptable_answers": [],
+            "answer_working": ""
+        },
+        {
+            "question_no": 10,
+            "question_sub_let": "x",
+            "question_text": "2\n=\n \n \n \nFind the x-coordinate(s) of any stationary point(s) on the curve.\nYou must use calculus and show any derivatives that you need to find when solving this problem.",
+            "question_formula": null,
+            "question_images": [],
+            "correct_answer": "",
+            "acceptable_answers": [],
+            "answer_working": ""
+        },
+        {
+            "question_no": 10,
+            "question_sub_let": "c",
+            "question_text": "A solid spherical lump of ice is melting while maintaining its spherical shape.\nAt the instant when the radius is 6 cm, the radius of the ball of ice is decreasing by 0.05 cm s–1.\nFind the rate at which the volume of the spherical ice ball is decreasing at the instant when the \nradius is 6 cm.\nYou must use calculus and show any derivatives that you need to find when solving this problem.\nCalculus 91578, 2025",
+            "question_formula": null,
+            "question_images": [],
+            "correct_answer": "",
+            "acceptable_answers": [],
+            "answer_working": ""
+        },
+        {
+            "question_no": 11,
+            "question_sub_let": "d",
+            "question_text": "The equation of a curve is given by the pair of parametric equations:\n.\nx\ny\n5\n5\ne",
+            "question_formula": null,
+            "question_images": [],
+            "correct_answer": "",
+            "acceptable_answers": [],
+            "answer_working": ""
+        },
+        {
+            "question_no": 11,
+            "question_sub_let": "t",
+            "question_text": "2\n2\n=\n=\nand\ne\nt\nFind the coordinates of the point(s) on the curve where the gradient is –2.\nYou must use calculus and show any derivatives that you need to find when solving this problem.\nQuestion Three continues\non the next page.\nCalculus 91578, 2025",
+            "question_formula": null,
+            "question_images": [],
+            "correct_answer": "",
+            "acceptable_answers": [],
+            "answer_working": ""
+        },
+        {
+            "question_no": 12,
+            "question_sub_let": "e",
+            "question_text": "The diagram below shows part of the symmetrical graph y2 = 16x – x2.",
+            "question_formula": null,
+            "question_images": [],
+            "correct_answer": "",
+            "acceptable_answers": [],
+            "answer_working": ""
+        },
+        {
+            "question_no": 12,
+            "question_sub_let": "a",
+            "question_text": "rectangle ABCD is drawn inside the curve with its vertices B and C lying on the curve.\nDiagram is \nNOT to scale\ny\ny2 = 16x – x2",
+            "question_formula": null,
+            "question_images": [],
+            "correct_answer": "",
+            "acceptable_answers": [],
+            "answer_working": ""
+        },
+        {
+            "question_no": 12,
+            "question_sub_let": "b",
+            "question_text": "C\nx\nA\nD\nFind the length AD so that the rectangle has its maximum area.\nYou can assume that the value found is a maximum.\nYou must use calculus and show any derivatives that you need to find when solving this problem.\nCalculus 91578, 2025",
+            "question_formula": null,
+            "question_images": [],
+            "correct_answer": "",
+            "acceptable_answers": [],
+            "answer_working": ""
+        },
+        {
+            "question_no": 13,
+            "question_sub_let": "",
+            "question_text": "Extra space if required.\nWrite the question number(s) if applicable.\nQUESTION\nNUMBER\nCalculus 91578, 2025",
+            "question_formula": null,
+            "question_images": [],
+            "correct_answer": "",
+            "acceptable_answers": [],
+            "answer_working": ""
+        },
+        {
+            "question_no": 14,
+            "question_sub_let": "",
+            "question_text": "Extra space if required.\nWrite the question number(s) if applicable.\nQUESTION\nNUMBER\nCalculus 91578, 2025",
+            "question_formula": null,
+            "question_images": [],
+            "correct_answer": "",
+            "acceptable_answers": [],
+            "answer_working": ""
+        },
+        {
+            "question_no": 15,
+            "question_sub_let": "",
+            "question_text": "Extra space if required.\nWrite the question number(s) if applicable.\nQUESTION\nNUMBER\nCalculus 91578, 2025",
+            "question_formula": null,
+            "question_images": [],
+            "correct_answer": "",
+            "acceptable_answers": [],
+            "answer_working": ""
+        },
+        {
+            "question_no": 16,
+            "question_sub_let": "",
+            "question_text": "Extra space if required.\nWrite the question number(s) if applicable.\nQUESTION\nNUMBER\n9 1 5 7 8\nCalculus 91578, 2025",
+            "question_formula": null,
+            "question_images": [],
+            "correct_answer": "",
+            "acceptable_answers": [],
+            "answer_working": ""
+        }
+    ]
+}

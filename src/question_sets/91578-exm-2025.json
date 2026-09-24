@@ -1,0 +1,253 @@
+{
+    "question_set_name": "91578-exm-2025",
+    "question_year": "2025",
+    "standard_number": 91578,
+    "ncea_level": "NCEA Level 2",
+    "question_list": [
+        {
+            "question_no": 1,
+            "question_sub_let": "a",
+            "question_text": "Differentiate f (x) = (5x3 – 2x +1)5. You do not need to simplify your answer. 60",
+            "question_formula": null,
+            "correct_answer": null
+        },
+        {
+            "question_no": 1,
+            "question_sub_let": "b",
+            "question_text": "The temperature of an oven is given by the formula C = +5 t +15, t given that 0 < t ≤ 12, where C is the temperature of the oven, in °C, and t is the time, in minutes, after the oven has",
+            "question_formula": null,
+            "correct_answer": null
+        },
+        {
+            "question_no": 1,
+            "question_sub_let": "b",
+            "question_text": "een switched off. Find the rate of change of the temperature of the oven 4 minutes after the oven was switched off. You must use calculus and show any derivatives that you need to find when solving this problem. r",
+            "question_formula": null,
+            "correct_answer": null
+        },
+        {
+            "question_no": 1,
+            "question_sub_let": "c",
+            "question_text": "What is the gradient of the normal to the curve when y = sin3x cosx when x = . 4 You must use calculus and show any derivatives that you need to find when solving this problem.",
+            "question_formula": null,
+            "correct_answer": null
+        },
+        {
+            "question_no": 1,
+            "question_sub_let": "c",
+            "question_text": "alculus 91578, 2025 3",
+            "question_formula": null,
+            "correct_answer": null
+        },
+        {
+            "question_no": 1,
+            "question_sub_let": "d",
+            "question_text": "The graph below shows the function f(x) = x2+e2x and the tangent to the curve when x = 1. y tangent y = x2 + e2x x P Find the point P, the x-intercept of this tangent. You must use calculus and show any derivatives that you need to find when solving this problem.",
+            "question_formula": null,
+            "correct_answer": null
+        },
+        {
+            "question_no": 1,
+            "question_sub_let": "c",
+            "question_text": "alculus 91578, 2025 4 (e) A curve is defined by the pair of parametric equations: x = 3t2 + 6t + 1 and y = 2t3 Find the coordinates of any points of inflection on this curve that are also stationary points. You may assume that any inflection point(s) found are actually inflection points. You must use calculus and show any derivatives that you need to find when solving this problem.",
+            "question_formula": null,
+            "correct_answer": null
+        },
+        {
+            "question_no": 2,
+            "question_sub_let": "a",
+            "question_text": "Differentiate f(x) = -ln(3x3-2x2+5) x You do not need to simplify your answer.",
+            "question_formula": null,
+            "correct_answer": null
+        },
+        {
+            "question_no": 2,
+            "question_sub_let": "b",
+            "question_text": "The depth of water, in metres, in a particular harbour, is given by the formula P = (30t-5t2)e-t , where t is measured in hours and 0 < t ≤ 4. Show whether the depth of the water in the harbour is increasing or decreasing after 2 hours. You must use calculus and show any derivatives that you need to find when solving this problem.",
+            "question_formula": null,
+            "correct_answer": null
+        },
+        {
+            "question_no": 2,
+            "question_sub_let": "c",
+            "question_text": "alculus 91578, 2025 6 x2",
+            "question_formula": null,
+            "correct_answer": null
+        },
+        {
+            "question_no": 2,
+            "question_sub_let": "c",
+            "question_text": "There are two tangents to the curve y = f(x) = that have the equation y = -3x+c. x+4 y 10 5 y = f (x) x –10 –9 –8 –7 –6 –5 –4 –3 –2 –1 1 2 3 4 5 6 7 8 9 10 –5 –10 y = f (x) –15 –20 –25 –30 –35 –40 Find the coordinates of the two points of contact of these tangents with the curve y = f (x). You must use calculus and show any derivatives that you need to find when solving this problem.",
+            "question_formula": null,
+            "correct_answer": null
+        },
+        {
+            "question_no": 2,
+            "question_sub_let": "c",
+            "question_text": "alculus 91578, 2025 7",
+            "question_formula": null,
+            "correct_answer": null
+        },
+        {
+            "question_no": 2,
+            "question_sub_let": "d",
+            "question_text": "Find the equation of the tangent to the graph defined by the pair of equations: r x = 2sect and y=5tant, at the point on the graph where t = . 6 You must use calculus and show any derivatives that you need to find when solving this problem.",
+            "question_formula": null,
+            "correct_answer": null
+        },
+        {
+            "question_no": 2,
+            "question_sub_let": "c",
+            "question_text": "alculus 91578, 2025 8 (e) The radius of curvature of a function is a measure of how much the curve is bending at a given point. 3",
+            "question_formula": null,
+            "correct_answer": null
+        },
+        {
+            "question_no": 2,
+            "question_sub_let": "d",
+            "question_text": "y 2 2 1+",
+            "question_formula": null,
+            "correct_answer": null
+        },
+        {
+            "question_no": 2,
+            "question_sub_let": "d",
+            "question_text": "c dx m n The formula to calculate the radius of curvature is given by p =",
+            "question_formula": null,
+            "correct_answer": null
+        },
+        {
+            "question_no": 2,
+            "question_sub_let": "d",
+            "question_text": "2y",
+            "question_formula": null,
+            "correct_answer": null
+        },
+        {
+            "question_no": 2,
+            "question_sub_let": "d",
+            "question_text": "x2 r Find the radius of curvature for the curve y = cos2 2x when x = . ^ h 3 You must use calculus and show any derivatives that you need to find when solving this problem.",
+            "question_formula": null,
+            "correct_answer": null
+        },
+        {
+            "question_no": 3,
+            "question_sub_let": "a",
+            "question_text": "The graph below shows the function y = f (x). y 10 9 8 7 6 5 4 3 2 1 x –10 –9 –8 –7 –6 –5 –4 –3 –2 –1 1 2 3 4 5 6 7 8 9 10 –1 –2 –3 –4 –5 For the function above: (i) Find the value(s) of x where f (x) is not differentiable. (ii) Find the value(s) of x where f ' (x) = 0. (iii) What is the value of lim f(x)? x\"-2 State clearly if the value does not exist.",
+            "question_formula": null,
+            "correct_answer": null
+        },
+        {
+            "question_no": 3,
+            "question_sub_let": "c",
+            "question_text": "alculus 91578, 2025 10 lnx",
+            "question_formula": null,
+            "correct_answer": null
+        },
+        {
+            "question_no": 3,
+            "question_sub_let": "b",
+            "question_text": "A curve has equation y = . 2x Find the x-coordinate(s) of any stationary point(s) on the curve. You must use calculus and show any derivatives that you need to find when solving this problem.",
+            "question_formula": null,
+            "correct_answer": null
+        },
+        {
+            "question_no": 3,
+            "question_sub_let": "c",
+            "question_text": "A solid spherical lump of ice is melting while maintaining its spherical shape.",
+            "question_formula": null,
+            "correct_answer": null
+        },
+        {
+            "question_no": 3,
+            "question_sub_let": "a",
+            "question_text": "t the instant when the radius is 6 cm, the radius of the ball of ice is decreasing by 0.05 cm s–1. Find the rate at which the volume of the spherical ice ball is decreasing at the instant when the radius is 6 cm. You must use calculus and show any derivatives that you need to find when solving this problem.",
+            "question_formula": null,
+            "correct_answer": null
+        },
+        {
+            "question_no": 3,
+            "question_sub_let": "c",
+            "question_text": "alculus 91578, 2025 11",
+            "question_formula": null,
+            "correct_answer": null
+        },
+        {
+            "question_no": 3,
+            "question_sub_let": "c",
+            "question_text": "ontinues on the next page.",
+            "question_formula": null,
+            "correct_answer": null
+        },
+        {
+            "question_no": 3,
+            "question_sub_let": "c",
+            "question_text": "alculus 91578, 2025 12 (e) The diagram below shows part of the symmetrical graph y2 = 16x – x2.",
+            "question_formula": null,
+            "correct_answer": null
+        },
+        {
+            "question_no": 3,
+            "question_sub_let": "a",
+            "question_text": "rectangle ABCD is drawn inside the curve with its vertices B and C lying on the curve.",
+            "question_formula": null,
+            "correct_answer": null
+        },
+        {
+            "question_no": 3,
+            "question_sub_let": "d",
+            "question_text": "iagram is y NOT to scale y2 = 16x – x2",
+            "question_formula": null,
+            "correct_answer": "r derivatives for dr dV dr dV =-0.05andr=6 for and =-22.62 dt dr dt dt dV dV dr found. found, with Werequire = # dt dr dt evidence of dV derivatives. =4rr2# -0.05 dt dV =4r#62# -0.05 dt dV =-7.2r =-22.62cm3/sec dt Unitsnotnecessary. Donotpenalisemissingminussign. (d) dx dy • Coordinates of =-10e-2t • . dt dx required point dy (3,54,7.071) =10e2t dt found, with evidence of dy 1 =10e2t# =-e4t derivative. dx -10e-2t Gradient=-2 -e4t=-2 e4t=2 4t =ln2 ln2 t = =0.173 4 5 & x = (3.54)& y=5 2(7.071) 2 i.e.requiredpointis(3.54,7.071) NCEA Level 3 Calculus (91578) 2025 – page 6 of 6 (e) 1 dA dA E7 y= 16x-x2 2 • Correct • found. ^ h dx dx Finding the Area=AD#AB from a model value(s) of x. LetA=(x,0) with a minor OR 1 error. Area=(16-2x) 16x-x2 2 Correct ^ h dA 1 solution but =-2 16x-x2 2 +(16-2x) dx ^ h with one 1 1 minor error. # 16x-x2 - 2 #(16-2x) 2^ h dA 1 (8-x)(16-2x) =-2 16x-x2 2 + E8 dx ^ h 1 16x-x2 2 Correct ^ h dA length of AD =0 dx found, with 1 (8-x)(16-2x) full and clear 2 16x-x2 2 = calculus ^ h 1 16x-x2 2 justification. ^ h 16x-x2 =(8-x)(8-x) 16x-x2 =64-16x+x2 2x2-32x+64=0 x =2.343and x =13.657 Thenlength AD =16-2#2.343 AD =11.314units NØ N1 N2 A3 A4 M5 M6 E7 E8 No response; ONE partial 1u 2u 3u 1r 2r 1t 2t no relevant solution. evidence. Cut Scores Not Achieved Achievement Achievement with Merit Achievement with Excellence 0 – 7 8 – 13 14 – 19 20– 24"
+        },
+        {
+            "question_no": 3,
+            "question_sub_let": "b",
+            "question_text": "C x",
+            "question_formula": null,
+            "correct_answer": null
+        },
+        {
+            "question_no": 3,
+            "question_sub_let": "a",
+            "question_text": "D Find the length AD so that the rectangle has its maximum area. You can assume that the value found is a maximum. You must use calculus and show any derivatives that you need to find when solving this problem.",
+            "question_formula": null,
+            "correct_answer": null
+        },
+        {
+            "question_no": 3,
+            "question_sub_let": "c",
+            "question_text": "alculus 91578, 2025 13 Extra space if required. Write the question number(s) if applicable. QUESTION NUMBER",
+            "question_formula": null,
+            "correct_answer": null
+        },
+        {
+            "question_no": 3,
+            "question_sub_let": "c",
+            "question_text": "alculus 91578, 2025 14 Extra space if required. Write the question number(s) if applicable. QUESTION NUMBER",
+            "question_formula": null,
+            "correct_answer": null
+        },
+        {
+            "question_no": 3,
+            "question_sub_let": "c",
+            "question_text": "alculus 91578, 2025 15 Extra space if required. Write the question number(s) if applicable. QUESTION NUMBER",
+            "question_formula": null,
+            "correct_answer": null
+        },
+        {
+            "question_no": 3,
+            "question_sub_let": "c",
+            "question_text": "alculus 91578, 2025 87519 16 Extra space if required. Write the question number(s) if applicable. QUESTION NUMBER",
+            "question_formula": null,
+            "correct_answer": null
+        },
+        {
+            "question_no": 3,
+            "question_sub_let": "c",
+            "question_text": "alculus 91578, 2025",
+            "question_formula": null,
+            "correct_answer": null
+        }
+    ]
+}

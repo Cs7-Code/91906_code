@@ -1,13 +1,32 @@
+import asyncio
 import json
+import math
 import os
 import pathlib
 import re
+import shutil
+import time
 
 import flet as ft
-import pdfplumber
-from pydantic import BaseModel
+import pymupdf
+import sympy
+from argon2 import PasswordHasher
+from argon2.exceptions import InvalidHashError, VerificationError
+from pydantic import BaseModel, Field as PydanticField
 from sqlalchemy.exc import IntegrityError
-from sqlmodel import JSON, Column, Field, Session, SQLModel, create_engine, select
+from sqlmodel import (
+    JSON,
+    Column,
+    Field,
+    Session,
+    SQLModel,
+    create_engine,
+    select,
+)
+from zxcvbn import zxcvbn
+
+
+password_hasher = PasswordHasher()
 
 
 class Name(BaseModel):
@@ -16,22 +35,26 @@ class Name(BaseModel):
 
 
 class User(SQLModel, table=True):
-    __table_args__ = {"extend_existing": True}
-
     id: int | None = Field(primary_key=True)
     user_name: Name = Field(sa_column=Column(JSON))
-    user_id: int = Field(ge=1000, le=9999, unique=True, nullable=False)
+    user_id: int = Field(ge=1000, le=99999, unique=True)
     user_pass: str = Field(nullable=False)
 
     @classmethod
     def create_user(
-        cls, engine, user_name_ent: Name, user_id_ent: int, user_pass_ent: str
-    ) -> bool:
+        cls,
+        engine,
+        user_name_ent,
+        user_id_ent,
+        user_pass_ent,
+    ):
         with Session(engine) as session:
             new_user = cls(
                 user_name=user_name_ent.model_dump(),
                 user_id=user_id_ent,
-                user_pass=user_pass_ent,
+                user_pass=password_hasher.hash(
+                    user_pass_ent
+                ),
             )
 
             try:
@@ -44,331 +67,2334 @@ class User(SQLModel, table=True):
 
     @classmethod
     def update_user_info(
-        cls, engine, user_id, value_to_change: str, new_value: str | int | None = None
-    ) -> bool:
+        cls,
+        engine,
+        user_id,
+        value_to_change,
+        new_value=None,
+    ):
         with Session(engine) as session:
-            statement = select(cls).where(cls.user_id == user_id)
-            user = session.exec(statement).first()
+            statement = select(cls).where(
+                cls.user_id == user_id
+            )
 
-            match value_to_change:
-                case "ID" if isinstance(new_value, int):
-                    user.user_id = new_value
-                case "Password" if isinstance(new_value, str):
-                    user.user_pass = new_value
-                case _:
-                    return False
+            user = session.exec(
+                statement
+            ).first()
+
+            if user is None:
+                return False
+
+            if (
+                value_to_change == "Password"
+                and isinstance(new_value, str)
+            ):
+                user.user_pass = (
+                    password_hasher.hash(
+                        new_value
+                    )
+                )
+
+            elif (
+                value_to_change == "ID"
+                and isinstance(new_value, int)
+            ):
+                user.user_id = new_value
+
+            else:
+                return False
 
             session.commit()
+
             return True
 
     @classmethod
-    def remove_user(cls, engine, user_name_ent, user_id_ent, user_pass_ent) -> None:
-        with Session(engine) as session:
-            statement = select(User).where(
-                User.user_id == user_id_ent, User.user_pass == user_pass_ent
-            )
-            user = session.exec(statement).first()
-            if user is not None:
-                session.delete(user)
-                session.commit()
-
-    @classmethod
-    def login(cls, engine, user_id_ent: int, user_pass_ent: str) -> bool:
+    def remove_user(
+        cls,
+        engine,
+        user_id_ent,
+        user_pass_ent,
+    ):
         with Session(engine) as session:
             statement = select(cls).where(
-                cls.user_id == user_id_ent, cls.user_pass == user_pass_ent
+                cls.user_id == user_id_ent
             )
-            user_exists = session.exec(statement).first()
-            return user_exists is not None
+
+            user = session.exec(
+                statement
+            ).first()
+
+            if user is None:
+                return False
+
+            try:
+                password_hasher.verify(
+                    user.user_pass,
+                    user_pass_ent,
+                )
+            except (
+                InvalidHashError,
+                VerificationError,
+            ):
+                return False
+
+            session.delete(user)
+            session.commit()
+
+            return True
+
+    @classmethod
+    def login(
+        cls,
+        engine,
+        user_id_ent,
+        user_pass_ent,
+    ):
+        with Session(engine) as session:
+            statement = select(cls).where(
+                cls.user_id == user_id_ent
+            )
+
+            user = session.exec(
+                statement
+            ).first()
+
+            if user is None:
+                return False
+
+            try:
+                password_hasher.verify(
+                    user.user_pass,
+                    user_pass_ent,
+                )
+
+                if password_hasher.check_needs_rehash(
+                    user.user_pass
+                ):
+                    user.user_pass = (
+                        password_hasher.hash(
+                            user_pass_ent
+                        )
+                    )
+
+                    session.commit()
+
+                return True
+
+            except (
+                InvalidHashError,
+                VerificationError,
+            ):
+                return False
 
     @staticmethod
     def db_config():
-        db_file_name = os.path.join(os.path.dirname(__file__), "users.db")
-        engine = create_engine(f"sqlite:///{db_file_name}")
-        SQLModel.metadata.create_all(engine)
+        db_path = (
+            pathlib.Path(__file__).parent
+            / "users.db"
+        )
+
+        engine = create_engine(
+            f"sqlite:///{db_path}"
+        )
+
+        SQLModel.metadata.create_all(
+            engine
+        )
+
         return engine
 
 
 class Question(BaseModel):
     question_no: int
-    question_sub_let: str = Field(max_length=1)
+    question_sub_let: str = ""
     question_text: str
-    question_formula: str | None
-    correct_answer: str | None = None
+    question_formula: str | None = None
+    question_images: list[str] = PydanticField(
+        default_factory=list
+    )
+    correct_answer: str = ""
+    acceptable_answers: list[str] = PydanticField(
+        default_factory=list
+    )
+    answer_working: str = ""
 
 
 class QuestionSet(BaseModel):
     question_set_name: str
-    question_year: str | None
-    question_list: list[Question]
+    question_year: str | None = None
+    question_list: list[Question] = PydanticField(
+        default_factory=list
+    )
 
     def save_to_json(self):
-        with open(f"{self.question_set_name}.json", "w", encoding="utf-8") as f:
-            f.write(self.model_dump_json(indent=4))
+        directory = (
+            pathlib.Path(__file__).parent
+            / "question_sets"
+        )
+
+        directory.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+        file_path = (
+            directory
+            / f"{self.question_set_name}.json"
+        )
+
+        with open(
+            file_path,
+            "w",
+            encoding="utf-8",
+        ) as file:
+            json.dump(
+                self.model_dump(),
+                file,
+                indent=4,
+                ensure_ascii=False,
+            )
+
+        return file_path
 
     @classmethod
-    def load_from_json(cls, json_file_to_read):
+    def load_from_json(
+        cls,
+        file_path,
+    ):
         try:
-            if not json_file_to_read.endswith(".json"):
-                json_file_to_read = f"{json_file_to_read}.json"
+            with open(
+                file_path,
+                "r",
+                encoding="utf-8",
+            ) as file:
+                data = json.load(file)
 
-            with open(json_file_to_read, "r", encoding="utf-8") as f:
-                output_from_file = json.load(f)
+            return cls.model_validate(data)
 
-            question_set = cls.model_validate(output_from_file)
-            return question_set
-        except ValueError:
-            return "Inputed File invaild"
-        except FileNotFoundError:
-            return "File couldn't be found"
-
-
-QUESTION_WORD_TO_NUMBER = {
-    "ONE": 1,
-    "TWO": 2,
-    "THREE": 3,
-    "FOUR": 4,
-    "FIVE": 5,
-    "SIX": 6,
-    "SEVEN": 7,
-    "EIGHT": 8,
-    "NINE": 9,
-    "TEN": 10,
-}
-
-SUBPART_PATTERN = re.compile(r"^\(?([a-d])\)\s*(.*)$", re.IGNORECASE)
-QUESTION_HEADER_PATTERN = re.compile(r"^QUESTION\s+([A-Z]+)", re.IGNORECASE)
-SCHEDULE_Q_PATTERN = re.compile(r"Q?\s*(\d+)\s*\(?([a-d])\)?", re.IGNORECASE)
+        except (
+            FileNotFoundError,
+            json.JSONDecodeError,
+            ValueError,
+        ):
+            return None
 
 
-def parse_ncea_pdf(pdf_path: str) -> QuestionSet:
-    questions: list[Question] = []
-    current_question: Question | None = None
-    current_question_no: int | None = None
+def get_question_sets_directory():
+    directory = (
+        pathlib.Path(__file__).parent
+        / "question_sets"
+    )
 
-    with pdfplumber.open(pdf_path) as pdf:
-        for page in pdf.pages:
-            text = page.extract_text() or ""
-            lines = text.split("\n")
+    directory.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
 
-            for line in lines:
-                stripped = line.strip()
-                if not stripped:
-                    continue
+    return directory
 
-                header_match = QUESTION_HEADER_PATTERN.match(stripped)
-                if header_match:
-                    word = header_match.group(1).upper()
-                    current_question_no = QUESTION_WORD_TO_NUMBER.get(word)
-                    current_question = None
-                    continue
 
-                sub_match = SUBPART_PATTERN.match(stripped)
-                if sub_match and current_question_no is not None:
-                    if current_question is not None:
-                        questions.append(current_question)
+def get_question_assets_directory():
+    directory = (
+        pathlib.Path(__file__).parent
+        / "question_assets"
+    )
 
-                    sub_letter = sub_match.group(1).lower()
-                    text_part = sub_match.group(2)
+    directory.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
 
-                    current_question = Question(
-                        question_no=current_question_no,
-                        question_sub_let=sub_letter,
-                        question_text=text_part,
-                        question_formula=None,
-                    )
-                else:
-                    if current_question is not None:
-                        current_question.question_text += " " + stripped
+    return directory
 
-        if current_question is not None:
-            questions.append(current_question)
 
-    question_set_name = pathlib.Path(pdf_path).stem
+def question_set_files():
+    directory = (
+        get_question_sets_directory()
+    )
 
-    return QuestionSet(
-        question_set_name=question_set_name,
-        question_year=None,
-        question_list=questions,
+    return sorted(
+        [
+            file
+            for file in directory.glob("*.json")
+            if file.name
+            != "question_set_schema.json"
+        ]
     )
 
 
-def parse_mark_schedule(pdf_path: str) -> dict[tuple[int, str], str]:
-    answers: dict[tuple[int, str], str] = {}
-    current_key: tuple[int, str] | None = None
+def password_strength(password):
+    if not password:
+        return 0, "Enter a password."
 
-    with pdfplumber.open(pdf_path) as pdf:
-        for page in pdf.pages:
-            text = page.extract_text() or ""
-            lines = text.split("\n")
+    result = zxcvbn(password)
 
-            for line in lines:
-                stripped = line.strip()
-                if not stripped:
-                    continue
+    score = result["score"]
 
-                match = SCHEDULE_Q_PATTERN.match(stripped.replace(" ", ""))
-                if match:
-                    q_no = int(match.group(1))
-                    sub = match.group(2).lower()
-                    current_key = (q_no, sub)
-                    continue
+    if score == 0:
+        message = "Very weak"
+    elif score == 1:
+        message = "Weak"
+    elif score == 2:
+        message = "Moderate"
+    elif score == 3:
+        message = "Strong"
+    else:
+        message = "Very strong"
 
-                if current_key is not None:
-                    if current_key not in answers:
-                        answers[current_key] = stripped
-                    else:
-                        answers[current_key] += " " + stripped
+    return score, message
+
+
+def clean_pdf_text(text):
+    text = text.replace(
+        "\u00a0",
+        " ",
+    )
+
+    text = text.replace(
+        "\u200b",
+        "",
+    )
+
+    text = text.replace(
+        "\r",
+        "\n",
+    )
+
+    text = re.sub(
+        r"[ \t]+",
+        " ",
+        text,
+    )
+
+    text = re.sub(
+        r"\n{3,}",
+        "\n\n",
+        text,
+    )
+
+    return text.strip()
+
+
+def extract_standard_number(text):
+    patterns = [
+        r"Achievement Standard\s+(\d{5})",
+        r"Achievement Standard.*?(\d{5})",
+        r"\b(91\d{3})\b",
+    ]
+
+    for pattern in patterns:
+        match = re.search(
+            pattern,
+            text,
+            re.IGNORECASE,
+        )
+
+        if match:
+            return match.group(1)
+
+    return ""
+
+
+def extract_year(text):
+    years = re.findall(
+        r"\b(20\d{2})\b",
+        text,
+    )
+
+    if not years:
+        return ""
+
+    return max(
+        set(years),
+        key=years.count,
+    )
+
+
+def determine_ncea_level(
+    standard_number,
+    text,
+):
+    match = re.search(
+        r"NCEA\s+Level\s+([123])",
+        text,
+        re.IGNORECASE,
+    )
+
+    if match:
+        return int(
+            match.group(1)
+        )
+
+    if standard_number.startswith("91"):
+        return 3
+
+    return 3
+
+
+def extract_subject(text):
+    if "Calculus" in text:
+        return "Calculus"
+
+    if "Physics" in text:
+        return "Physics"
+
+    if "Mathematics" in text:
+        return "Mathematics"
+
+    return "Unknown"
+
+
+def extract_pdf_text(pdf_path):
+    document = pymupdf.open(
+        str(pdf_path)
+    )
+
+    text = "\n".join(
+        page.get_text()
+        for page in document
+    )
+
+    document.close()
+
+    return clean_pdf_text(text)
+
+
+def get_pdf_lines(pdf_path):
+    document = pymupdf.open(
+        str(pdf_path)
+    )
+
+    pages = []
+
+    for page in document:
+        blocks = page.get_text(
+            "blocks"
+        )
+
+        lines = []
+
+        for block in blocks:
+            if len(block) < 5:
+                continue
+
+            x0, y0, x1, y1, text = (
+                block[:5]
+            )
+
+            text = clean_pdf_text(text)
+
+            if not text:
+                continue
+
+            lines.append(
+                {
+                    "text": text,
+                    "x0": x0,
+                    "y0": y0,
+                    "x1": x1,
+                    "y1": y1,
+                }
+            )
+
+        lines.sort(
+            key=lambda item: item["y0"]
+        )
+
+        pages.append(lines)
+
+    document.close()
+
+    return pages
+
+
+def find_question_headers(
+    page_lines
+):
+    headers = []
+
+    for page_number, lines in enumerate(
+        page_lines
+    ):
+        for index, line in enumerate(
+            lines
+        ):
+            text = line["text"].strip()
+
+            match = re.match(
+                r"^(?:QUESTION\s*)?(\d{1,2})"
+                r"[\.:]?\s*$",
+                text,
+                re.IGNORECASE,
+            )
+
+            if match:
+                number = int(
+                    match.group(1)
+                )
+
+                if 1 <= number <= 20:
+                    headers.append(
+                        {
+                            "number": number,
+                            "page": page_number,
+                            "index": index,
+                            "y": line["y0"],
+                        }
+                    )
+
+    return headers
+
+
+def find_subquestions(lines):
+    subquestions = []
+
+    for index, line in enumerate(
+        lines
+    ):
+        text = line["text"].strip()
+
+        match = re.match(
+            r"^\(?([a-z])\)?[\.:]?\s+",
+            text,
+            re.IGNORECASE,
+        )
+
+        if match:
+            subquestions.append(
+                {
+                    "index": index,
+                    "letter": (
+                        match.group(1).lower()
+                    ),
+                    "y": line["y0"],
+                }
+            )
+
+    return subquestions
+
+
+def parse_exam_questions(
+    pdf_path
+):
+    page_lines = get_pdf_lines(
+        pdf_path
+    )
+
+    headers = find_question_headers(
+        page_lines
+    )
+
+    questions = []
+
+    for header_index, header in enumerate(
+        headers
+    ):
+        page_number = header["page"]
+
+        lines = page_lines[
+            page_number
+        ]
+
+        start_index = (
+            header["index"] + 1
+        )
+
+        if (
+            header_index + 1
+            < len(headers)
+            and headers[
+                header_index + 1
+            ]["page"]
+            == page_number
+        ):
+            end_index = headers[
+                header_index + 1
+            ]["index"]
+        else:
+            end_index = len(lines)
+
+        section = lines[
+            start_index:end_index
+        ]
+
+        subquestions = find_subquestions(
+            section
+        )
+
+        if not subquestions:
+            text = clean_pdf_text(
+                "\n".join(
+                    line["text"]
+                    for line in section
+                )
+            )
+
+            if text:
+                questions.append(
+                    {
+                        "number": header[
+                            "number"
+                        ],
+                        "letter": "",
+                        "text": text,
+                        "page": page_number,
+                    }
+                )
+
+            continue
+
+        for sub_index, subquestion in enumerate(
+            subquestions
+        ):
+            start = subquestion[
+                "index"
+            ]
+
+            if (
+                sub_index + 1
+                < len(subquestions)
+            ):
+                end = subquestions[
+                    sub_index + 1
+                ]["index"]
+            else:
+                end = len(section)
+
+            sub_section = section[
+                start:end
+            ]
+
+            text = clean_pdf_text(
+                "\n".join(
+                    line["text"]
+                    for line in sub_section
+                )
+            )
+
+            prefix = re.compile(
+                r"^\s*\(?"
+                + re.escape(
+                    subquestion[
+                        "letter"
+                    ]
+                )
+                + r"\)?[\.:]?\s*",
+                re.IGNORECASE,
+            )
+
+            text = prefix.sub(
+                "",
+                text,
+                count=1,
+            )
+
+            if text:
+                questions.append(
+                    {
+                        "number": header[
+                            "number"
+                        ],
+                        "letter": (
+                            subquestion[
+                                "letter"
+                            ]
+                        ),
+                        "text": text,
+                        "page": page_number,
+                    }
+                )
+
+    return questions
+
+
+def extract_formula(text):
+    formulas = []
+
+    patterns = [
+        r"y\s*=\s*[^.;\n]+",
+        r"f\s*\(\s*x\s*\)\s*=\s*[^.;\n]+",
+        r"[a-zA-Z]\s*['′]\s*=\s*[^.;\n]+",
+    ]
+
+    for pattern in patterns:
+        matches = re.findall(
+            pattern,
+            text,
+            re.IGNORECASE,
+        )
+
+        for match in matches:
+            match = match.strip()
+
+            if match not in formulas:
+                formulas.append(match)
+
+    return "\n".join(
+        formulas
+    )
+
+
+def extract_page_images(
+    pdf_path,
+    page_number,
+    question_number,
+    sub_letter,
+    asset_directory,
+):
+    document = pymupdf.open(
+        str(pdf_path)
+    )
+
+    page = document[
+        page_number
+    ]
+
+    image_paths = []
+
+    for image_number, image_info in enumerate(
+        page.get_images(
+            full=True
+        )
+    ):
+        xref = image_info[0]
+
+        try:
+            image = document.extract_image(
+                xref
+            )
+
+            extension = image.get(
+                "ext",
+                "png",
+            )
+
+            filename = (
+                f"q{question_number}"
+                f"{sub_letter or ''}"
+                f"_image{image_number}."
+                f"{extension}"
+            )
+
+            output_path = (
+                pathlib.Path(
+                    asset_directory
+                )
+                / filename
+            )
+
+            with open(
+                output_path,
+                "wb",
+            ) as file:
+                file.write(
+                    image["image"]
+                )
+
+            image_paths.append(
+                str(output_path)
+            )
+
+        except Exception:
+            continue
+
+    document.close()
+
+    return image_paths
+
+
+def parse_marking_schedule(
+    schedule_path
+):
+    document = pymupdf.open(
+        str(schedule_path)
+    )
+
+    pages = []
+
+    for page in document:
+        pages.append(
+            clean_pdf_text(
+                page.get_text()
+            )
+        )
+
+    document.close()
+
+    return "\n\n".join(
+        pages
+    )
+
+
+def extract_schedule_answers(
+    schedule_text
+):
+    answers = {}
+
+    current_question = None
+    current_letter = None
+
+    for raw_line in schedule_text.splitlines():
+        line = raw_line.strip()
+
+        if not line:
+            continue
+
+        question_match = re.match(
+            r"^(?:Question|QUESTION)"
+            r"\s*(\d+)",
+            line,
+            re.IGNORECASE,
+        )
+
+        if question_match:
+            current_question = int(
+                question_match.group(1)
+            )
+
+            current_letter = None
+
+            continue
+
+        sub_match = re.match(
+            r"^\(?([a-h])"
+            r"[\.\):]\s*(.*)$",
+            line,
+            re.IGNORECASE,
+        )
+
+        if (
+            current_question is not None
+            and sub_match
+        ):
+            current_letter = (
+                sub_match.group(1).lower()
+            )
+
+            content = (
+                sub_match.group(2).strip()
+            )
+
+            key = (
+                current_question,
+                current_letter,
+            )
+
+            answers.setdefault(
+                key,
+                [],
+            )
+
+            if content:
+                answers[key].append(
+                    content
+                )
+
+            continue
+
+        if (
+            current_question is not None
+            and current_letter is not None
+        ):
+            key = (
+                current_question,
+                current_letter,
+            )
+
+            answers.setdefault(
+                key,
+                []
+            ).append(line)
 
     return answers
 
 
-def normalize_answer(ans: str) -> str:
-    return ans.strip().lower().replace(" ", "")
+def normalize_answer(value):
+    if value is None:
+        return ""
+
+    value = str(value).strip().lower()
+
+    replacements = {
+        "−": "-",
+        "×": "*",
+        "÷": "/",
+        "π": "pi",
+        "∞": "oo",
+    }
+
+    for old, new in replacements.items():
+        value = value.replace(
+            old,
+            new,
+        )
+
+    value = re.sub(
+        r"\s+",
+        "",
+        value,
+    )
+
+    return value
 
 
-def is_equivalent(user_answer: str, correct_answer: str | None) -> bool:
-    if correct_answer is None:
+def extract_numbers(text):
+    return [
+        float(number)
+        for number in re.findall(
+            r"[-+]?(?:\d+(?:\.\d*)?"
+            r"|\.\d+)(?:[eE][-+]?\d+)?",
+            text,
+        )
+    ]
+
+
+def numbers_equivalent(
+    first,
+    second,
+):
+    first_numbers = extract_numbers(
+        first
+    )
+
+    second_numbers = extract_numbers(
+        second
+    )
+
+    if not first_numbers:
         return False
 
+    if len(first_numbers) != len(
+        second_numbers
+    ):
+        return False
+
+    return all(
+        math.isclose(
+            first_value,
+            second_value,
+            rel_tol=1e-8,
+            abs_tol=1e-8,
+        )
+        for first_value, second_value
+        in zip(
+            first_numbers,
+            second_numbers,
+        )
+    )
+
+
+def symbolic_equivalent(
+    first,
+    second,
+):
     try:
-        u = float(user_answer)
-        c = float(correct_answer)
-        return abs(u - c) <= 1e-2
-    except ValueError:
-        pass
+        first = normalize_answer(
+            first
+        ).replace(
+            "^",
+            "**",
+        )
 
-    return normalize_answer(user_answer) == normalize_answer(correct_answer)
+        second = normalize_answer(
+            second
+        ).replace(
+            "^",
+            "**",
+        )
+
+        locals_dictionary = {
+            "pi": sympy.pi,
+            "sqrt": sympy.sqrt,
+            "sin": sympy.sin,
+            "cos": sympy.cos,
+            "tan": sympy.tan,
+            "ln": sympy.log,
+            "log": sympy.log,
+            "e": sympy.E,
+        }
+
+        first_expression = sympy.sympify(
+            first,
+            locals=locals_dictionary,
+        )
+
+        second_expression = sympy.sympify(
+            second,
+            locals=locals_dictionary,
+        )
+
+        return (
+            sympy.simplify(
+                first_expression
+                - second_expression
+            )
+            == 0
+        )
+
+    except Exception:
+        return False
 
 
-def home_page(page: ft.Page) -> ft.View:
+def answer_is_correct(
+    user_answer,
+    acceptable_answers,
+):
+    user_answer = normalize_answer(
+        user_answer
+    )
+
+    if not user_answer:
+        return False
+
+    for acceptable in acceptable_answers:
+        acceptable = normalize_answer(
+            acceptable
+        )
+
+        if user_answer == acceptable:
+            return True
+
+        if numbers_equivalent(
+            user_answer,
+            acceptable,
+        ):
+            return True
+
+        if symbolic_equivalent(
+            user_answer,
+            acceptable,
+        ):
+            return True
+
+    return False
+
+
+def build_question_set(
+    exam_path,
+    schedule_path,
+):
+    exam_text = extract_pdf_text(
+        exam_path
+    )
+
+    standard_number = (
+        extract_standard_number(
+            exam_text
+        )
+    )
+
+    if not standard_number:
+        raise ValueError(
+            "Could not determine the "
+            "NZQA standard number."
+        )
+
+    year = extract_year(
+        exam_text
+    )
+
+    parsed_questions = (
+        parse_exam_questions(
+            exam_path
+        )
+    )
+
+    if not parsed_questions:
+        raise ValueError(
+            "No questions could be "
+            "detected in the exam PDF."
+        )
+
+    schedule_text = (
+        parse_marking_schedule(
+            schedule_path
+        )
+    )
+
+    schedule_answers = (
+        extract_schedule_answers(
+            schedule_text
+        )
+    )
+
+    assets_directory = (
+        get_question_assets_directory()
+        / f"{standard_number}_{year}"
+    )
+
+    if assets_directory.exists():
+        shutil.rmtree(
+            assets_directory
+        )
+
+    assets_directory.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    question_list = []
+
+    for parsed_question in parsed_questions:
+        number = parsed_question[
+            "number"
+        ]
+
+        letter = parsed_question[
+            "letter"
+        ]
+
+        text = parsed_question[
+            "text"
+        ]
+
+        formula = extract_formula(
+            text
+        )
+
+        images = extract_page_images(
+            exam_path,
+            parsed_question[
+                "page"
+            ],
+            number,
+            letter,
+            assets_directory,
+        )
+
+        answers = schedule_answers.get(
+            (
+                number,
+                letter,
+            ),
+            [],
+        )
+
+        question_list.append(
+            Question(
+                question_no=number,
+                question_sub_let=letter,
+                question_text=text,
+                question_formula=(
+                    formula or None
+                ),
+                question_images=images,
+                correct_answer=(
+                    answers[-1]
+                    if answers
+                    else ""
+                ),
+                acceptable_answers=answers,
+                answer_working="\n".join(
+                    answers
+                ),
+            )
+        )
+
+    return QuestionSet(
+        question_set_name=(
+            f"{standard_number}_{year}"
+        ),
+        question_year=year or None,
+        question_list=question_list,
+    )
+
+
+def question_title(question):
+    if question.question_sub_let:
+        return (
+            f"Question "
+            f"{question.question_no}"
+            f"({question.question_sub_let})"
+        )
+
+    return (
+        f"Question "
+        f"{question.question_no}"
+    )
+
+
+def humanize_time(seconds):
+    seconds = max(int(round(seconds)), 0)
+
+    hours, remainder = divmod(seconds, 3600)
+    minutes, secs = divmod(remainder, 60)
+
+    if hours:
+        return f"{hours}h {minutes}m {secs}s"
+
+    if minutes:
+        return f"{minutes}m {secs}s"
+
+    return f"{secs}s"
+
+
+def quiz_page(
+    page,
+    question_set,
+    duration_seconds=None,
+):
+    questions = (
+        question_set.question_list
+    )
+
+    is_timed = duration_seconds is not None
+
+    current_index = 0
+
+    score = 0
+
+    answered = {}
+
+    quiz_start_time = time.monotonic()
+
+    timer_running = True
+
+    timer_generation = 0
+
+    timer_text = ft.Text(
+        humanize_time(
+            duration_seconds if is_timed else 0
+        ),
+        size=18,
+        weight=ft.FontWeight.BOLD,
+    )
+
+    progress_text = ft.Text(
+        size=18,
+        weight=ft.FontWeight.BOLD,
+    )
+
+    score_text = ft.Text(
+        size=16,
+    )
+
+    question_title_text = ft.Text(
+        size=24,
+        weight=ft.FontWeight.BOLD,
+    )
+
+    question_text = ft.Text(
+        size=18,
+        selectable=True,
+    )
+
+    formula_text = ft.Text(
+        size=17,
+        selectable=True,
+    )
+
+    image_column = ft.Column(
+        spacing=10,
+    )
+
+    answer_field = ft.TextField(
+        label="Your answer",
+        multiline=True,
+        min_lines=3,
+        max_lines=6,
+    )
+
+    feedback_text = ft.Text(
+        size=18,
+    )
+
+    working_text = ft.Text(
+        selectable=True,
+    )
+
+    previous_button = ft.FilledButton(
+        "Previous"
+    )
+
+    check_button = ft.FilledButton(
+        "Check Answer"
+    )
+
+    next_button = ft.FilledButton(
+        "Next"
+    )
+
+    async def update_timer(generation):
+        while (
+            timer_running
+            and generation == timer_generation
+        ):
+            await asyncio.sleep(1)
+
+            if (
+                not timer_running
+                or generation != timer_generation
+            ):
+                break
+
+            elapsed = (
+                time.monotonic()
+                - quiz_start_time
+            )
+
+            if is_timed:
+                remaining = max(
+                    duration_seconds - elapsed,
+                    0,
+                )
+
+                timer_text.value = (
+                    humanize_time(remaining)
+                )
+
+                if remaining <= 0:
+                    stop_timer()
+                    show_results()
+                    break
+            else:
+                timer_text.value = (
+                    humanize_time(elapsed)
+                )
+
+            try:
+                page.update()
+            except Exception:
+                break
+
+    def start_timer():
+        nonlocal timer_running
+        nonlocal timer_generation
+        nonlocal quiz_start_time
+
+        timer_generation += 1
+
+        generation = timer_generation
+
+        quiz_start_time = time.monotonic()
+
+        timer_running = True
+
+        asyncio.create_task(
+            update_timer(
+                generation
+            )
+        )
+
+    def stop_timer():
+        nonlocal timer_running
+        nonlocal timer_generation
+
+        timer_running = False
+        timer_generation += 1
+
+    def render_question():
+        nonlocal current_index
+
+        question = questions[
+            current_index
+        ]
+
+        progress_text.value = (
+            f"{current_index + 1} "
+            f"of {len(questions)}"
+        )
+
+        question_title_text.value = (
+            question_title(
+                question
+            )
+        )
+
+        question_text.value = (
+            question.question_text
+        )
+
+        formula_text.value = (
+            question.question_formula
+            or ""
+        )
+
+        answer_field.value = ""
+
+        feedback_text.value = ""
+
+        working_text.value = ""
+
+        image_column.controls.clear()
+
+        for image_path in (
+            question.question_images
+        ):
+            image_file = pathlib.Path(
+                image_path
+            )
+
+            if image_file.exists():
+                image_column.controls.append(
+                    ft.Image(
+                        src=str(
+                            image_file
+                        ),
+                        fit=ft.BoxFit.CONTAIN,
+                        height=350,
+                    )
+                )
+
+        if current_index in answered:
+            result = answered[
+                current_index
+            ]
+
+            answer_field.value = (
+                result["answer"]
+            )
+
+            if result["correct"]:
+                feedback_text.value = (
+                    "Correct!"
+                )
+            else:
+                feedback_text.value = (
+                    "Incorrect."
+                )
+
+                working_text.value = (
+                    "Marking schedule:\n"
+                    f"{question.correct_answer}"
+                )
+
+            check_button.disabled = True
+
+        else:
+            check_button.disabled = False
+
+        previous_button.disabled = (
+            current_index == 0
+        )
+
+        next_button.disabled = (
+            current_index
+            == len(questions) - 1
+        )
+
+        score_text.value = (
+            f"Score: "
+            f"{score}/"
+            f"{len(questions)}"
+        )
+
+        page.update()
+
+    def check_answer(e):
+        nonlocal score
+
+        question = questions[
+            current_index
+        ]
+
+        answer = (
+            answer_field.value
+            or ""
+        ).strip()
+
+        if not answer:
+            feedback_text.value = (
+                "Please enter an answer."
+            )
+
+            page.update()
+
+            return
+
+        if current_index in answered:
+            return
+
+        correct = answer_is_correct(
+            answer,
+            question.acceptable_answers,
+        )
+
+        answered[
+            current_index
+        ] = {
+            "answer": answer,
+            "correct": correct,
+        }
+
+        if correct:
+            score += 1
+
+            feedback_text.value = (
+                "Correct!"
+            )
+
+            working_text.value = ""
+
+        else:
+            feedback_text.value = (
+                "Incorrect."
+            )
+
+            working_text.value = (
+                "Marking schedule answer:\n"
+                f"{question.correct_answer}"
+            )
+
+        check_button.disabled = True
+
+        score_text.value = (
+            f"Score: "
+            f"{score}/"
+            f"{len(questions)}"
+        )
+
+        page.update()
+
+    def previous_question(e):
+        nonlocal current_index
+
+        if current_index > 0:
+            current_index -= 1
+
+            render_question()
+
+    def show_results():
+        stop_timer()
+
+        elapsed = (
+            time.monotonic()
+            - quiz_start_time
+        )
+
+        attempted = len(
+            answered
+        )
+
+        percentage = (
+            score / len(questions) * 100
+            if questions
+            else 0
+        )
+
+        result_text = ft.Column(
+            controls=[
+                ft.Text(
+                    "Quiz Complete",
+                    size=30,
+                    weight=ft.FontWeight.BOLD,
+                ),
+                ft.Text(
+                    f"Score: "
+                    f"{score}/"
+                    f"{len(questions)}",
+                    size=22,
+                ),
+                ft.Text(
+                    f"Percentage: "
+                    f"{percentage:.1f}%",
+                    size=20,
+                ),
+                ft.Text(
+                    f"Attempted: "
+                    f"{attempted}/"
+                    f"{len(questions)}",
+                    size=18,
+                ),
+                ft.Text(
+                    f"Time: "
+                    f"{humanize_time(elapsed)}",
+                    size=18,
+                ),
+            ],
+            horizontal_alignment=(
+                ft.CrossAxisAlignment.CENTER
+            ),
+        )
+
+        def restart(e):
+            nonlocal current_index
+            nonlocal score
+            nonlocal quiz_start_time
+            nonlocal timer_running
+
+            current_index = 0
+            score = 0
+
+            answered.clear()
+
+            page.pop_dialog()
+
+            render_question()
+
+            if is_timed:
+                start_timer()
+            else:
+                quiz_start_time = time.monotonic()
+
+        def home(e):
+            stop_timer()
+
+            page.pop_dialog()
+
+            page.navigate(
+                "/home"
+            )
+
+        dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text(
+                "Results"
+            ),
+            content=result_text,
+            actions=[
+                ft.FilledButton(
+                    "Restart",
+                    on_click=restart,
+                ),
+                ft.FilledButton(
+                    "Back to Home",
+                    on_click=home,
+                ),
+            ],
+        )
+
+        page.show_dialog(
+            dialog
+        )
+
+    def next_question(e):
+        nonlocal current_index
+
+        if (
+            current_index
+            < len(questions) - 1
+        ):
+            current_index += 1
+
+            render_question()
+
+        else:
+            show_results()
+
+    check_button.on_click = (
+        check_answer
+    )
+
+    previous_button.on_click = (
+        previous_question
+    )
+
+    next_button.on_click = (
+        next_question
+    )
+
+    back_button = ft.FilledButton(
+        "Back to Home",
+        on_click=lambda e: (
+            stop_timer(),
+            page.navigate(
+                "/home"
+            ),
+        ),
+    )
+
+    header_controls = [
+        back_button,
+        ft.Container(
+            expand=True
+        ),
+        ft.Text(
+            question_set.question_set_name,
+            size=20,
+            weight=ft.FontWeight.BOLD,
+        ),
+        ft.Container(
+            expand=True
+        ),
+    ]
+
+    if is_timed:
+        header_controls.extend(
+            [
+                ft.Icon(
+                    ft.Icons.TIMER_OUTLINED
+                ),
+                timer_text,
+            ]
+        )
+
+    header = ft.Row(
+        controls=header_controls
+    )
+
+    quiz_controls = ft.Column(
+        controls=[
+            header,
+            ft.Divider(),
+            ft.Row(
+                controls=[
+                    progress_text,
+                    ft.Container(
+                        expand=True
+                    ),
+                    score_text,
+                ]
+            ),
+            question_title_text,
+            question_text,
+            formula_text,
+            image_column,
+            answer_field,
+            ft.Row(
+                controls=[
+                    check_button,
+                    feedback_text,
+                ]
+            ),
+            working_text,
+            ft.Divider(),
+            ft.Row(
+                controls=[
+                    previous_button,
+                    next_button,
+                ],
+                alignment=(
+                    ft.MainAxisAlignment.CENTER
+                ),
+            ),
+        ],
+        scroll=ft.ScrollMode.AUTO,
+        expand=True,
+    )
+
+    render_question()
+
+    if is_timed:
+        start_timer()
+
+    return ft.View(
+        route="/quiz",
+        controls=[
+            ft.Container(
+                content=quiz_controls,
+                padding=20,
+                expand=True,
+            )
+        ],
+    )
+
+
+def home_page(page):
     page.title = "Home"
 
     current_user_id = page.session.store.get("User_ID")
     engine = User.db_config()
 
     with Session(engine) as session:
-        statement = select(User).where(User.user_id == current_user_id)
-        user = session.exec(statement).first()
-        user_name = Name.model_validate(user.user_name).first_name
-
-    welcome_message = ft.Text(
-        f"Welcome, {user_name}!", theme_style=ft.TextThemeStyle.DISPLAY_SMALL
-    )
-
-    question_sets_dir = pathlib.Path(__file__).parent / "question_sets"
-
-    if not question_sets_dir.exists():
-        question_sets_dir.mkdir(parents=True, exist_ok=True)
-
-    json_path = question_sets_dir / "question_set_schema.json"
-
-    if not json_path.exists():
-        with open(json_path, "w") as f:
-            json_schema = QuestionSet.model_json_schema()
-            json.dump(json_schema, f, indent=4)
-
-    exam_path_text = ft.Text("No exam selected")
-    schedule_path_text = ft.Text("No schedule selected")
-
-    def on_exam_result(e: ft.FilePickerResultEvent):
-        if e.files and len(e.files) > 0:
-            exam_file = e.files[0]
-            page.session.store.set("Exam_PDF", exam_file.path)
-            exam_path_text.value = exam_file.name
-            page.update()
-
-    def on_schedule_result(e: ft.FilePickerResultEvent):
-        if e.files and len(e.files) > 0:
-            schedule_file = e.files[0]
-            page.session.store.set("Schedule_PDF", schedule_file.path)
-            schedule_path_text.value = schedule_file.name
-            page.update()
-
-    exam_picker = ft.FilePicker(on_result=on_exam_result)
-    schedule_picker = ft.FilePicker(on_result=on_schedule_result)
-
-    page.overlay.append(exam_picker)
-    page.overlay.append(schedule_picker)
-
-    async def select_exam(e):
-        await exam_picker.pick_files(allow_multiple=False)
-
-    async def select_schedule(e):
-        await schedule_picker.pick_files(allow_multiple=False)
-
-    def open_upload_dialog(e):
-        def close_dialog(e):
-            page.pop_dialog()
-
-        def start_quiz(e):
-            exam_path = page.session.store.get("Exam_PDF")
-            schedule_path = page.session.store.get("Schedule_PDF")
-            if not exam_path or not schedule_path:
-                return
-            page.pop_dialog()
-            page.navigate("/quiz")
-
-        dialog_content = ft.Column(
-            controls=[
-                ft.Text("Select NCEA Exam Paper and Marking Schedule"),
-                ft.Row(
-                    controls=[
-                        ft.FilledButton("Select Exam PDF", on_click=select_exam),
-                        exam_path_text,
-                    ]
-                ),
-                ft.Row(
-                    controls=[
-                        ft.FilledButton(
-                            "Select Schedule PDF", on_click=select_schedule
-                        ),
-                        schedule_path_text,
-                    ]
-                ),
-            ]
+        statement = select(User).where(
+            User.user_id == current_user_id
         )
+        user = session.exec(statement).first()
 
-        upload_dialog = ft.AlertDialog(
-            modal=False,
-            title=ft.Text("Create Quiz from NCEA Paper"),
-            content=dialog_content,
-            actions=[
-                ft.FilledButton("Start Quiz", on_click=start_quiz),
-                ft.FilledButton("Close", on_click=close_dialog),
+    if user is None:
+        return ft.View(
+            route="/home",
+            controls=[
+                ft.Text("User not found.")
             ],
         )
 
-        page.show_dialog(upload_dialog)
+    user_name = Name.model_validate(
+        user.user_name
+    ).first_name
 
-    upload_button = ft.FilledButton(
-        content=ft.Text("Create Quiz from NCEA Paper"), on_click=open_upload_dialog
+    welcome_message = ft.Text(
+        f"Welcome, {user_name}!",
+        theme_style=ft.TextThemeStyle.DISPLAY_SMALL,
     )
 
-    welcome_container = ft.Container(
-        alignment=ft.Alignment.TOP_CENTER,
-        content=ft.Column(
+    exam_picker = ft.FilePicker()
+    schedule_picker = ft.FilePicker()
+
+    status_text = ft.Text("")
+    progress_ring = ft.ProgressRing(
+        visible=False,
+        width=20,
+        height=20,
+    )
+
+    saved_list = ft.Column(spacing=5)
+
+    def show_error(message):
+        def close_dialog(e):
+            page.pop_dialog()
+
+        page.show_dialog(
+            ft.AlertDialog(
+                modal=False,
+                title=ft.Text("Couldn't create quiz"),
+                content=ft.Text(message),
+                actions=[
+                    ft.FilledButton(
+                        "Dismiss",
+                        on_click=close_dialog,
+                    )
+                ],
+            )
+        )
+
+    def start_question_set(question_set, duration_seconds=None):
+        page.session.store.set(
+            "Current_Question_Set",
+            question_set.model_dump_json(),
+        )
+        page.session.store.set(
+            "Quiz_Duration_Seconds",
+            duration_seconds,
+        )
+        page.navigate("/quiz")
+
+    quiz_time_options_minutes = list(
+        range(15, 181, 15)
+    )
+
+    def open_start_quiz_dialog(question_set):
+        default_index = quiz_time_options_minutes.index(60)
+        selected = {"index": default_index}
+
+        minutes_value_text = ft.Text(
+            f"{quiz_time_options_minutes[default_index]} minutes",
+            size=16,
+            weight=ft.FontWeight.BOLD,
+        )
+
+        def update_spinbox_buttons():
+            decrease_button.disabled = (
+                selected["index"] == 0
+            )
+            increase_button.disabled = (
+                selected["index"]
+                == len(quiz_time_options_minutes) - 1
+            )
+
+        def change_minutes(delta):
+            def handler(e):
+                new_index = selected["index"] + delta
+                new_index = max(
+                    0,
+                    min(
+                        len(quiz_time_options_minutes) - 1,
+                        new_index,
+                    ),
+                )
+                selected["index"] = new_index
+                minutes_value_text.value = (
+                    f"{quiz_time_options_minutes[new_index]} minutes"
+                )
+                update_spinbox_buttons()
+                page.update()
+
+            return handler
+
+        decrease_button = ft.IconButton(
+            icon=ft.Icons.REMOVE_CIRCLE_OUTLINE,
+            tooltip="15 minutes less",
+            on_click=change_minutes(-1),
+        )
+
+        increase_button = ft.IconButton(
+            icon=ft.Icons.ADD_CIRCLE_OUTLINE,
+            tooltip="15 minutes more",
+            on_click=change_minutes(1),
+        )
+
+        update_spinbox_buttons()
+
+        minutes_spinbox = ft.Row(
             controls=[
-                welcome_message,
-                upload_button,
-            ]
-        ),
+                decrease_button,
+                minutes_value_text,
+                increase_button,
+            ],
+            alignment=ft.MainAxisAlignment.CENTER,
+            tight=True,
+            visible=False,
+        )
+
+        def on_mode_change(e):
+            minutes_spinbox.visible = (
+                mode_radio_group.value == "timed"
+            )
+            page.update()
+
+        mode_radio_group = ft.RadioGroup(
+            value="untimed",
+            on_change=on_mode_change,
+            content=ft.Column(
+                tight=True,
+                controls=[
+                    ft.Radio(
+                        value="untimed",
+                        label="Untimed",
+                    ),
+                    ft.Radio(
+                        value="timed",
+                        label="Timed",
+                    ),
+                ],
+            ),
+        )
+
+        def start_clicked(e):
+            page.pop_dialog()
+
+            if mode_radio_group.value == "timed":
+                minutes = quiz_time_options_minutes[
+                    selected["index"]
+                ]
+                start_question_set(
+                    question_set,
+                    minutes * 60,
+                )
+            else:
+                start_question_set(question_set)
+
+        start_dialog = ft.AlertDialog(
+            modal=False,
+            title=ft.Text(
+                f'Start "{question_set.question_set_name}"'
+            ),
+            content=ft.Column(
+                tight=True,
+                controls=[
+                    mode_radio_group,
+                    minutes_spinbox,
+                ],
+            ),
+            actions=[
+                ft.FilledButton(
+                    "Start Quiz",
+                    on_click=start_clicked,
+                ),
+                ft.FilledButton(
+                    "Cancel",
+                    on_click=lambda e: page.pop_dialog(),
+                ),
+            ],
+        )
+
+        page.show_dialog(start_dialog)
+
+    def refresh_saved_quizzes():
+        saved_list.controls.clear()
+
+        files = question_set_files()
+
+        if not files:
+            saved_list.controls.append(
+                ft.Text("No saved quizzes yet.")
+            )
+        else:
+            for file_path in files:
+                def play_saved(e, path=file_path):
+                    loaded_set = QuestionSet.load_from_json(path)
+
+                    if loaded_set is None:
+                        show_error(
+                            "That saved quiz file could not be read."
+                        )
+                        return
+
+                    open_start_quiz_dialog(loaded_set)
+
+                saved_list.controls.append(
+                    ft.Card(
+                        content=ft.Container(
+                            content=ft.Row(
+                                controls=[
+                                    ft.Text(
+                                        file_path.stem,
+                                        size=16,
+                                        weight=ft.FontWeight.BOLD,
+                                        expand=True,
+                                    ),
+                                    ft.IconButton(
+                                        icon=ft.Icons.PLAY_CIRCLE_FILLED_ROUNDED,
+                                        icon_size=32,
+                                        tooltip="Start quiz",
+                                        on_click=play_saved,
+                                    ),
+                                ],
+                            ),
+                            padding=10,
+                        ),
+                    )
+                )
+
+        page.update()
+
+    async def create_quiz(e):
+        exam_files = await exam_picker.pick_files(
+            allow_multiple=False,
+            allowed_extensions=["pdf"],
+        )
+
+        if not exam_files:
+            return
+
+        schedule_files = await schedule_picker.pick_files(
+            allow_multiple=False,
+            allowed_extensions=["pdf"],
+        )
+
+        if not schedule_files:
+            return
+
+        create_button.disabled = True
+        progress_ring.visible = True
+        status_text.value = "Building quiz from PDFs..."
+        page.update()
+
+        try:
+            new_question_set = await asyncio.to_thread(
+                build_question_set,
+                exam_files[0].path,
+                schedule_files[0].path,
+            )
+            new_question_set.save_to_json()
+        except ValueError as error:
+            show_error(str(error))
+            return
+        except Exception:
+            show_error(
+                "Something went wrong while reading those PDFs."
+            )
+            return
+        finally:
+            create_button.disabled = False
+            progress_ring.visible = False
+            status_text.value = ""
+            page.update()
+
+        refresh_saved_quizzes()
+        open_start_quiz_dialog(new_question_set)
+
+    create_button = ft.FilledButton(
+        "Create Quiz from PDFs",
+        icon=ft.Icons.UPLOAD_FILE_ROUNDED,
+        on_click=create_quiz,
+    )
+
+    home_column = ft.Column(
+        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+        controls=[
+            welcome_message,
+            ft.Row(
+                controls=[create_button, progress_ring],
+                alignment=ft.MainAxisAlignment.CENTER,
+            ),
+            status_text,
+            ft.Divider(),
+            ft.Text(
+                "Your saved quizzes",
+                size=18,
+                weight=ft.FontWeight.BOLD,
+            ),
+            saved_list,
+        ],
+        scroll=ft.ScrollMode.AUTO,
         expand=True,
     )
 
+    refresh_saved_quizzes()
+
     return ft.View(
         route="/home",
-        controls=[welcome_container],
+        controls=[
+            ft.Container(
+                content=home_column,
+                padding=20,
+                expand=True,
+            )
+        ],
     )
 
 
-def login_page(page: ft.Page) -> ft.View:
+
+def settings_dialog(page):
+    user_id_icon = ft.Icon(
+        ft.Icons.ACCOUNT_CIRCLE_ROUNDED,
+        color=ft.Colors.PRIMARY,
+        size=40,
+    )
+
+    user_id_text_field = ft.TextField(
+        label="User ID",
+        max_length=5,
+        counter="",
+        input_filter=ft.NumbersOnlyInputFilter(),
+        read_only=True,
+        value=f"{page.session.store.get('User_ID')}",
+    )
+
+    user_name_field = ft.Row(
+        controls=[user_id_icon, user_id_text_field],
+        tight=True,
+        tooltip="User ID",
+    )
+
+    user_password_icon = ft.Icon(
+        ft.Icons.PASSWORD,
+        color=ft.Colors.SECONDARY,
+        size=40,
+    )
+
+    def password_change(e):
+        current_password_text_field = ft.TextField(
+            label="Current Password/Pin",
+            password=True,
+            can_reveal_password=True,
+        )
+
+        new_password_text_field = ft.TextField(
+            label="Password/Pin",
+            password=True,
+            can_reveal_password=True,
+        )
+
+        current_password_field = ft.Row(
+            [user_password_icon, current_password_text_field],
+            tight=True,
+            tooltip="Current Password/Pin",
+        )
+
+        new_password_field = ft.Row(
+            [user_password_icon, new_password_text_field],
+            tight=True,
+            tooltip="Password/Pin",
+        )
+
+        new_password_column = ft.Column(
+            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+            tight=True,
+            controls=[
+                current_password_field,
+                new_password_field,
+            ],
+        )
+
+        new_password_fields = ft.Container(
+            content=new_password_column,
+            padding=10,
+        )
+
+        def change_password_verify(e):
+            new_value = new_password_text_field.value or ""
+
+            score, _ = password_strength(new_value)
+
+            if (
+                not current_password_text_field.value
+                or not new_value
+                or score < 3
+            ):
+                def close_dialog(e):
+                    page.pop_dialog()
+
+                create_user_input_fail_dialog = ft.AlertDialog(
+                    modal=False,
+                    title=ft.Text("Input is of Incorrect Type"),
+                    content=ft.Text(
+                        "Input is of Incorrect Type, please re-enter "
+                        "your Password('s) and ensure they are of the "
+                        "correct types or are not the original value "
+                        "(i.e not blank)"
+                    ),
+                    scrollable=False,
+                    actions=[
+                        ft.FilledButton(
+                            "Dismiss",
+                            on_click=close_dialog,
+                        )
+                    ],
+                )
+
+                page.show_dialog(create_user_input_fail_dialog)
+                return False
+
+            engine = User.db_config()
+
+            with Session(engine) as session:
+                statement = select(User).where(
+                    User.user_id
+                    == page.session.store.get("User_ID")
+                )
+
+                user = session.exec(statement).first()
+
+                if user is None:
+                    return False
+
+                try:
+                    password_hasher.verify(
+                        user.user_pass,
+                        current_password_text_field.value,
+                    )
+                except (
+                    InvalidHashError,
+                    VerificationError,
+                ):
+                    def close_dialog(e):
+                        page.pop_dialog()
+
+                    fail_dialog = ft.AlertDialog(
+                        modal=False,
+                        title=ft.Text("Input is of Incorrect Type"),
+                        content=ft.Text(
+                            "Input is of Incorrect Type, please re-enter "
+                            "your Password('s) and ensure they are of the "
+                            "correct types or are not the original value "
+                            "(i.e not blank)"
+                        ),
+                        scrollable=False,
+                        actions=[
+                            ft.FilledButton(
+                                "Dismiss",
+                                on_click=close_dialog,
+                            )
+                        ],
+                    )
+
+                    page.show_dialog(fail_dialog)
+                    return False
+
+                user.user_pass = password_hasher.hash(
+                    new_value
+                )
+                session.commit()
+
+            page.pop_dialog()
+
+        create_user_dialog = ft.AlertDialog(
+            modal=False,
+            title=ft.Text("Change Password"),
+            content=new_password_fields,
+            actions=[
+                ft.FilledButton(
+                    "Change Password",
+                    on_click=change_password_verify,
+                )
+            ],
+        )
+
+        page.show_dialog(create_user_dialog)
+        return False
+
+    password_change_button = ft.FilledButton(
+        "Reset Password",
+        on_click=password_change,
+    )
+
+    user_pass_textfield = ft.TextField(
+        label="Password/Pin",
+        password=True,
+        can_reveal_password=False,
+        read_only=True,
+        value="Password stored securely",
+    )
+
+    user_password_field = ft.Row(
+        controls=[user_password_icon, user_pass_textfield],
+        tight=True,
+        tooltip="Password/Pin",
+    )
+
+    user_info_fields = ft.Column(
+        tight=True,
+        controls=[
+            user_name_field,
+            user_password_field,
+            password_change_button,
+        ],
+    )
+
+    user_info_container = ft.Container(
+        alignment=ft.Alignment.CENTER_LEFT,
+        content=user_info_fields,
+    )
+
+    def toggle_theme(e):
+        page.theme_mode = (
+            ft.ThemeMode.DARK
+            if e.control.value
+            else ft.ThemeMode.LIGHT
+        )
+
+        theme_icon.icon = (
+            ft.Icons.DARK_MODE_ROUNDED
+            if e.control.value
+            else ft.Icons.LIGHT_MODE_ROUNDED
+        )
+
+        page.update()
+
+    theme_icon = ft.Icon(
+        ft.Icons.DARK_MODE_ROUNDED
+        if page.theme_mode == ft.ThemeMode.DARK
+        else ft.Icons.LIGHT_MODE_ROUNDED,
+        color=ft.Colors.SECONDARY,
+        size=40,
+    )
+
+    theme_toggle = ft.Switch(
+        value=page.theme_mode == ft.ThemeMode.DARK,
+        tooltip="Toggle light/dark theme",
+        on_change=toggle_theme,
+    )
+
+    theme_row = ft.Row(
+        controls=[
+            theme_icon,
+            theme_toggle,
+        ],
+        tight=True,
+    )
+
+    settings_column = ft.Column(
+        tight=True,
+        controls=[
+            user_info_container,
+            ft.Divider(),
+            theme_row,
+        ],
+    )
+
+    return ft.AlertDialog(
+        modal=False,
+        title=ft.Text("Settings"),
+        content=ft.Container(
+            content=settings_column,
+            padding=10,
+            width=350,
+        ),
+        actions=[
+            ft.FilledButton(
+                "Close",
+                on_click=lambda e: page.pop_dialog(),
+            )
+        ],
+    )
+
+
+
+def login_page(page):
     page.title = "Login"
 
-    login_title = ft.Text("Login", theme_style=ft.TextThemeStyle.DISPLAY_SMALL)
+    login_title = ft.Text(
+        "Login",
+        theme_style=ft.TextThemeStyle.DISPLAY_SMALL,
+    )
 
     user_id_icon = ft.Icon(
-        ft.Icons.ACCOUNT_CIRCLE_ROUNDED, color=ft.Colors.PRIMARY, size=40
+        ft.Icons.ACCOUNT_CIRCLE_ROUNDED,
+        color=ft.Colors.PRIMARY,
+        size=40,
     )
 
     user_id_text_field = ft.TextField(
@@ -379,13 +2405,21 @@ def login_page(page: ft.Page) -> ft.View:
     )
 
     user_name_field = ft.Row(
-        [user_id_icon, user_id_text_field], tight=True, tooltip="User ID"
+        [user_id_icon, user_id_text_field],
+        tight=True,
+        tooltip="User ID",
     )
 
-    user_password_icon = ft.Icon(ft.Icons.PASSWORD, color=ft.Colors.PRIMARY, size=40)
+    user_password_icon = ft.Icon(
+        ft.Icons.PASSWORD,
+        color=ft.Colors.PRIMARY,
+        size=40,
+    )
 
     user_password_text_field = ft.TextField(
-        label="Password/Pin", password=True, can_reveal_password=True
+        label="Password/Pin",
+        password=True,
+        can_reveal_password=True,
     )
 
     user_password_field = ft.Row(
@@ -396,12 +2430,12 @@ def login_page(page: ft.Page) -> ft.View:
 
     def login_on_click(e):
         try:
-            if len(user_id_text_field.value) != 5:
+            if len(user_id_text_field.value or "") != 5:
                 raise ValueError
 
             user_id_ent = int(user_id_text_field.value)
 
-            if user_password_text_field.value == "":
+            if not user_password_text_field.value:
                 raise ValueError
 
         except ValueError:
@@ -412,23 +2446,37 @@ def login_page(page: ft.Page) -> ft.View:
                 modal=False,
                 title=ft.Text("Input is of Incorrect Type"),
                 content=ft.Text(
-                    "Input is of Incorrect Type, please re-enter your user ID and/or Password and ensure they are of the correct types (i.e not blank)"
+                    "Input is of Incorrect Type, please re-enter "
+                    "your user ID and/or Password and ensure they "
+                    "are of the correct types (i.e not blank)"
                 ),
                 scrollable=False,
-                actions=[ft.FilledButton("Dismiss", on_click=close_dialog)],
+                actions=[
+                    ft.FilledButton(
+                        "Dismiss",
+                        on_click=close_dialog,
+                    )
+                ],
             )
 
             page.show_dialog(input_fail_dialog)
             return False
 
         engine = User.db_config()
-        user_password_ent = user_password_text_field.value
 
-        login_success = User.login(engine, user_id_ent, user_password_ent)
+        login_success = User.login(
+            engine,
+            user_id_ent,
+            user_password_text_field.value,
+        )
 
         if login_success:
-            page.session.store.set("User_ID", user_id_ent)
+            page.session.store.set(
+                "User_ID",
+                user_id_ent,
+            )
             page.navigate("/home")
+
         else:
             def close_dialog(e):
                 page.pop_dialog()
@@ -437,31 +2485,51 @@ def login_page(page: ft.Page) -> ft.View:
                 modal=False,
                 title=ft.Text("Login Unsuccesful"),
                 content=ft.Text(
-                    "Login Unsuccesful, user ID and/or Password may be incorrect, please re-enter these values and try again"
+                    "Login Unsuccesful, user ID and/or Password "
+                    "may be incorrect, please re-enter these "
+                    "values and try again"
                 ),
                 scrollable=False,
-                actions=[ft.FilledButton("Dismiss", on_click=close_dialog)],
+                actions=[
+                    ft.FilledButton(
+                        "Dismiss",
+                        on_click=close_dialog,
+                    )
+                ],
             )
 
             page.show_dialog(login_fail_dialog)
 
-    login_button = ft.FilledButton(content=ft.Text("Login"), on_click=login_on_click)
+    login_button = ft.FilledButton(
+        content=ft.Text("Login"),
+        on_click=login_on_click,
+    )
 
     def on_create_user_button_click(e):
         def close_dialog(e):
             page.pop_dialog()
 
-        create_user_fname_text_field = ft.TextField(label="First Name")
-        create_user_lname_text_field = ft.TextField(label="Last Name")
+        create_user_fname_text_field = ft.TextField(
+            label="First Name",
+        )
+
+        create_user_lname_text_field = ft.TextField(
+            label="Last Name",
+        )
 
         name_column = ft.Column(
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
             tight=True,
-            controls=[create_user_fname_text_field, create_user_lname_text_field],
+            controls=[
+                create_user_fname_text_field,
+                create_user_lname_text_field,
+            ],
         )
 
         user_name_icon = ft.Icon(
-            ft.Icons.BADGE_ROUNDED, color=ft.Colors.PRIMARY, size=40
+            ft.Icons.BADGE_ROUNDED,
+            color=ft.Colors.PRIMARY,
+            size=40,
         )
 
         create_user_name_field = ft.Row(
@@ -478,11 +2546,15 @@ def login_page(page: ft.Page) -> ft.View:
         )
 
         create_user_id_field = ft.Row(
-            [user_id_icon, create_user_id_text_field], tight=True, tooltip="User ID"
+            [user_id_icon, create_user_id_text_field],
+            tight=True,
+            tooltip="User ID",
         )
 
         create_user_password_text_field = ft.TextField(
-            label="Password/Pin", password=True, can_reveal_password=True
+            label="Password/Pin",
+            password=True,
+            can_reveal_password=True,
         )
 
         create_user_password_field = ft.Row(
@@ -501,49 +2573,68 @@ def login_page(page: ft.Page) -> ft.View:
             ],
         )
 
-        create_user_fields = ft.Container(content=create_user_column, padding=10)
+        create_user_fields = ft.Container(
+            content=create_user_column,
+            padding=10,
+        )
 
         def on_close(engine, user_name, user_id, user_pass):
             is_user_creation_success = User.create_user(
-                engine, user_name, user_id, user_pass
+                engine,
+                user_name,
+                user_id,
+                user_pass,
             )
 
-            def close_dialog():
+            def close_created_dialog(e):
                 page.pop_dialog()
 
             if not is_user_creation_success:
                 unique_fail_dialog = ft.AlertDialog(
                     modal=False,
-                    title=ft.Text("User Information entered is not unique"),
+                    title=ft.Text(
+                        "User Information entered is not unique"
+                    ),
                     content=ft.Text(
-                        "User Information entered is not unique, please re-enter your user ID and/or Password and ensure they are unique values"
+                        "User Information entered is not unique, "
+                        "please re-enter your user ID and/or Password "
+                        "and ensure they are unique values"
                     ),
                     scrollable=False,
-                    actions=[ft.FilledButton("Dismiss", on_click=close_dialog)],
+                    actions=[
+                        ft.FilledButton(
+                            "Dismiss",
+                            on_click=close_created_dialog,
+                        )
+                    ],
                 )
 
                 page.show_dialog(unique_fail_dialog)
                 return False
-            else:
-                page.pop_dialog()
-                page.show_dialog(
-                    ft.SnackBar(
-                        content=ft.Text(
-                            "User Created Succesfully! Please re-enter your login information above to login in "
-                        ),
-                        show_close_icon=True,
-                        duration=10000,
-                    )
+
+            page.pop_dialog()
+
+            page.show_dialog(
+                ft.SnackBar(
+                    content=ft.Text(
+                        "User Created Succesfully! Please re-enter "
+                        "your login information above to login in "
+                    ),
+                    show_close_icon=True,
+                    duration=10000,
                 )
+            )
 
         def create_user_verify(e):
             try:
-                if len(create_user_id_text_field.value) == 5:
-                    create_user_id_ent = int(create_user_id_text_field.value)
+                if len(create_user_id_text_field.value or "") == 5:
+                    create_user_id_ent = int(
+                        create_user_id_text_field.value
+                    )
                 else:
                     raise ValueError
 
-                if create_user_password_text_field.value == "":
+                if not create_user_password_text_field.value:
                     raise ValueError
 
                 if (
@@ -560,17 +2651,24 @@ def login_page(page: ft.Page) -> ft.View:
                     modal=False,
                     title=ft.Text("Input is of Incorrect Type"),
                     content=ft.Text(
-                        "Input is of Incorrect Type, please re-enter your user ID and/or Password and ensure they are of the correct types (i.e not blank)"
+                        "Input is of Incorrect Type, please re-enter "
+                        "your user ID and/or Password and ensure they "
+                        "are of the correct types (i.e not blank)"
                     ),
                     scrollable=False,
-                    actions=[ft.FilledButton("Dismiss", on_click=close_dialog)],
+                    actions=[
+                        ft.FilledButton(
+                            "Dismiss",
+                            on_click=close_dialog,
+                        )
+                    ],
                 )
 
                 page.show_dialog(create_user_input_fail_dialog)
                 return False
 
             engine = User.db_config()
-            create_user_password_text_field_ent = create_user_password_text_field.value
+
             create_user_name = Name(
                 first_name=create_user_fname_text_field.value,
                 last_name=create_user_lname_text_field.value,
@@ -580,409 +2678,70 @@ def login_page(page: ft.Page) -> ft.View:
                 engine,
                 create_user_name,
                 create_user_id_ent,
-                create_user_password_text_field_ent,
+                create_user_password_text_field.value,
             )
 
         create_user_dialog = ft.AlertDialog(
             modal=False,
             title=ft.Text("Create User"),
             content=create_user_fields,
-            actions=[ft.FilledButton("Create User", on_click=create_user_verify)],
-        )
-
-        page.show_dialog(create_user_dialog)
-        return False
-
-    create_user_button = ft.FilledButton(
-        content=ft.Text("Create User"), on_click=on_create_user_button_click
-    )
-
-    actions_row = ft.Row([login_button, create_user_button], tight=True)
-
-    login_fields = ft.Column(
-        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-        controls=[login_title, user_name_field, user_password_field, actions_row],
-    )
-
-    login_card = ft.Card(
-        shadow_color=ft.Colors.ON_SURFACE_VARIANT,
-        content=ft.Container(padding=10, content=login_fields),
-        opacity=0.65,
-    )
-
-    db_path = pathlib.Path(__file__).parent / "users.db"
-
-    if not db_path.exists():
-        on_create_user_button_click(None)
-
-    return ft.View(
-        route="/login",
-        horizontal_alignment=ft.MainAxisAlignment.CENTER,
-        vertical_alignment=ft.MainAxisAlignment.CENTER,
-        controls=[login_card],
-    )
-
-
-def settings_page(page: ft.Page) -> ft.View:
-    page.title = "Settings"
-
-    title = ft.Text("Settings", theme_style=ft.TextThemeStyle.DISPLAY_MEDIUM)
-
-    user_id_icon = ft.Icon(
-        ft.Icons.ACCOUNT_CIRCLE_ROUNDED, color=ft.Colors.PRIMARY, size=40
-    )
-
-    user_id_text_field = ft.TextField(
-        label="User ID",
-        max_length=5,
-        counter="",
-        input_filter=ft.NumbersOnlyInputFilter(),
-        read_only=True,
-        value=f"{page.session.store.get('User_ID')}",
-    )
-
-    user_name_field = ft.Row(
-        controls=[user_id_icon, user_id_text_field], tight=True, tooltip="User ID"
-    )
-
-    user_password_icon = ft.Icon(ft.Icons.PASSWORD, color=ft.Colors.SECONDARY, size=40)
-
-    def password_change(e):
-        def close_dialog(e):
-            page.pop_dialog()
-
-        user_password_icon_inner = ft.Icon(
-            ft.Icons.PASSWORD, color=ft.Colors.PRIMARY, size=40
-        )
-
-        current_password_text_field = ft.TextField(
-            label="Current Password/Pin", password=True, can_reveal_password=True
-        )
-
-        current_password_field = ft.Row(
-            [user_password_icon_inner, current_password_text_field],
-            tight=True,
-            tooltip="Current Password/Pin",
-        )
-
-        new_password_text_field = ft.TextField(
-            label="Password/Pin", password=True, can_reveal_password=True
-        )
-
-        new_password_field = ft.Row(
-            [user_password_icon_inner, new_password_text_field],
-            tight=True,
-            tooltip="Password/Pin",
-        )
-
-        new_password_column = ft.Column(
-            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-            tight=True,
-            controls=[current_password_field, new_password_field],
-        )
-
-        new_password_fields = ft.Container(content=new_password_column, padding=10)
-
-        def on_close(pass_values):
-            engine = User.db_config()
-            User.update_user_info(
-                engine,
-                page.session.store.get("User_ID"),
-                "Password",
-                pass_values["New_Password"],
-            )
-            page.pop_dialog()
-
-        def change_password_verify(e):
-            try:
-                if current_password_text_field.value == "" or new_password_text_field.value == "":
-                    raise ValueError
-
-                pass_values = {
-                    "Current_Password": current_password_text_field.value,
-                    "New_Password": new_password_text_field.value,
-                }
-
-                engine = User.db_config()
-
-                with Session(engine) as session:
-                    statement = select(User).where(
-                        User.user_id == page.session.store.get("User_ID"),
-                        User.user_pass == pass_values["Current_Password"],
-                    )
-                    user = session.exec(statement).first()
-
-                    if user is None:
-                        raise ValueError
-
-            except ValueError:
-                def close_dialog(e):
-                    page.pop_dialog()
-
-                create_user_input_fail_dialog = ft.AlertDialog(
-                    modal=False,
-                    title=ft.Text("Input is of Incorrect Type"),
-                    content=ft.Text(
-                        "Input is of Incorrect Type, please re-enter your Password('s) and ensure they are of the correct types or are not the original value(i.e not blank)"
-                    ),
-                    scrollable=False,
-                    actions=[ft.FilledButton("Dismiss", on_click=close_dialog)],
-                )
-
-                page.show_dialog(create_user_input_fail_dialog)
-                return False
-
-            on_close(pass_values)
-
-        create_user_dialog = ft.AlertDialog(
-            modal=False,
-            title=ft.Text("Change Password"),
-            content=new_password_fields,
             actions=[
-                ft.FilledButton("Change Password", on_click=change_password_verify)
+                ft.FilledButton(
+                    "Create User",
+                    on_click=create_user_verify,
+                )
             ],
         )
 
         page.show_dialog(create_user_dialog)
         return False
 
-    password_change_button = ft.FilledButton("Reset Password", on_click=password_change)
-
-    check_pass_engine = User.db_config()
-
-    with Session(check_pass_engine) as session:
-        statement = select(User).where(
-            User.user_id == page.session.store.get("User_ID"),
-        )
-        user = session.exec(statement).first()
-
-        user_pass = user.user_pass
-
-    def show_pass(e):
-        if user_pass_textfield.password:
-            user_reveal_pass.icon = ft.Icons.VISIBILITY_OFF_ROUNDED
-
-            user_password_icon_inner = ft.Icon(
-                ft.Icons.PASSWORD, color=ft.Colors.SECONDARY, size=40
-            )
-
-            password_text_field = ft.TextField(
-                label="Password/Pin", password=True, can_reveal_password=True
-            )
-
-            password_field = ft.Row(
-                [user_password_icon_inner, password_text_field],
-                tight=True,
-                tooltip="Current Password/Pin",
-            )
-
-            def close_dialog(e):
-                page.pop_dialog()
-
-            def check_pass_ent(e):
-                try:
-                    if password_text_field.value == "":
-                        raise ValueError
-
-                    engine = User.db_config()
-
-                    with Session(engine) as session:
-                        statement = select(User).where(
-                            User.user_id == page.session.store.get("User_ID"),
-                            User.user_pass == password_text_field.value,
-                        )
-                        user = session.exec(statement).first()
-
-                        if user is None:
-                            raise ValueError
-                        else:
-                            user_pass_textfield.password = False
-                            user_reveal_pass.icon = ft.Icons.VISIBILITY_OFF_ROUNDED
-                            page.pop_dialog()
-                            page.update()
-
-                except ValueError:
-                    def close_dialog(e):
-                        page.pop_dialog()
-
-                    pass_input_fail_dialog = ft.AlertDialog(
-                        modal=False,
-                        title=ft.Text("Password Incorrect"),
-                        content=ft.Text(
-                            "Input is of Incorrect Type or is incorrect, please re-enter your Password and ensure they are of the correct types and value (i.e not blank)"
-                        ),
-                        scrollable=False,
-                        actions=[ft.FilledButton("Dismiss", on_click=close_dialog)],
-                    )
-
-                    page.show_dialog(pass_input_fail_dialog)
-                    return False
-
-            check_pass_dialog = ft.AlertDialog(
-                modal=False,
-                title=ft.Text("Password Verification"),
-                content=password_field,
-                actions=[ft.FilledButton("Check Password", on_click=check_pass_ent)],
-            )
-
-            page.show_dialog(check_pass_dialog)
-
-        else:
-            user_reveal_pass.icon = ft.Icons.VISIBILITY_ROUNDED
-            user_pass_textfield.password = True
-            page.update()
-
-    user_reveal_pass = ft.IconButton(
-        icon=ft.Icons.VISIBILITY_ROUNDED, on_click=show_pass
+    create_user_button = ft.FilledButton(
+        content=ft.Text("Create User"),
+        on_click=on_create_user_button_click,
     )
 
-    user_pass_textfield = ft.TextField(
-        label="Password/Pin",
-        password=True,
-        can_reveal_password=False,
-        read_only=True,
-        value=user_pass,
-        suffix=user_reveal_pass,
-    )
-
-    user_password_field = ft.Row(
-        controls=[user_password_icon, user_pass_textfield],
+    actions_row = ft.Row(
+        [login_button, create_user_button],
         tight=True,
-        tooltip="Password/Pin",
     )
 
-    user_info_fields = ft.Column(
-        tight=True,
-        controls=[user_name_field, user_password_field, password_change_button],
-    )
-
-    user_info_container = ft.Container(
-        alignment=ft.Alignment.CENTER_LEFT, content=user_info_fields
-    )
-
-    settings_column = ft.Column(
+    login_fields = ft.Column(
         horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-        controls=[title, user_info_container],
-    )
-
-    settings_view = ft.View(
-        route="/settings",
         controls=[
-            ft.Container(
-                alignment=ft.Alignment.TOP_CENTER, content=settings_column, expand=True
-            )
+            login_title,
+            user_name_field,
+            user_password_field,
+            actions_row,
         ],
     )
-    return settings_view
 
-
-def quiz_page(page: ft.Page) -> ft.View:
-    exam_path = page.session.store.get("Exam_PDF")
-    schedule_path = page.session.store.get("Schedule_PDF")
-
-    question_set = parse_ncea_pdf(exam_path)
-    answers = parse_mark_schedule(schedule_path)
-
-    for q in question_set.question_list:
-        key = (q.question_no, q.question_sub_let)
-        if key in answers:
-            q.correct_answer = answers[key]
-
-    page.title = f"Quiz: {question_set.question_set_name}"
-
-    current_index = 0
-    score = 0
-
-    question_text = ft.Text("", size=20, weight="bold")
-    answer_field = ft.TextField(label="Your Answer", multiline=True)
-    feedback_text = ft.Text("", size=16)
-
-    time_left = 900
-    timer_text = ft.Text(f"Time: {time_left}", size=18)
-
-    def load_question():
-        nonlocal current_index
-        if current_index < len(question_set.question_list):
-            q = question_set.question_list[current_index]
-            question_text.value = f"{q.question_no}{q.question_sub_let}. {q.question_text}"
-            feedback_text.value = ""
-            answer_field.value = ""
-        else:
-            finish_quiz()
-        page.update()
-
-    def finish_quiz():
-        dialog = ft.AlertDialog(
-            modal=False,
-            title=ft.Text("Quiz Complete"),
-            content=ft.Text(
-                f"Your score: {score}/{len(question_set.question_list)}"
-            ),
-            actions=[ft.FilledButton("OK", on_click=lambda e: page.pop_dialog())],
-        )
-        page.show_dialog(dialog)
-
-    def submit_answer(e):
-        nonlocal current_index, score
-        if current_index < len(question_set.question_list):
-            q = question_set.question_list[current_index]
-            user_ans = answer_field.value
-            if is_equivalent(user_ans, q.correct_answer):
-                score += 1
-                feedback_text.value = "Correct!"
-            else:
-                if q.correct_answer is not None:
-                    feedback_text.value = f"Incorrect. Correct answer: {q.correct_answer}"
-                else:
-                    feedback_text.value = "No official answer available."
-            current_index += 1
-            load_question()
-        page.update()
-
-    def tick_timer():
-        nonlocal time_left
-        time_left -= 1
-        if time_left <= 0:
-            time_left = 0
-            timer_text.value = f"Time: {time_left}"
-            page.update()
-            finish_quiz()
-        else:
-            timer_text.value = f"Time: {time_left}"
-            page.update()
-
-    page.run_interval(tick_timer, 1000)
-
-    submit_button = ft.FilledButton("Submit", on_click=submit_answer)
-
-    load_question()
-
-    quiz_column = ft.Column(
-        controls=[
-            timer_text,
-            question_text,
-            answer_field,
-            submit_button,
-            feedback_text,
-        ]
+    login_card = ft.Card(
+        shadow_color=ft.Colors.ON_SURFACE_VARIANT,
+        content=ft.Container(
+            padding=10,
+            content=login_fields,
+        ),
+        opacity=0.65,
     )
 
     return ft.View(
-        route="/quiz",
-        controls=[
-            ft.Container(
-                alignment=ft.Alignment.TOP_CENTER,
-                content=quiz_column,
-                expand=True,
-            )
-        ],
+        route="/login",
+        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        controls=[login_card],
     )
 
 
-def main(page: ft.Page):
+
+def main(page):
+    page.title = "NCEA Quiz"
+
     page.theme_mode = ft.ThemeMode.DARK
+
     page.horizontal_alignment = ft.MainAxisAlignment.CENTER
     page.vertical_alignment = ft.MainAxisAlignment.CENTER
+
     page.padding = 10
 
     def logout(e):
@@ -991,76 +2750,137 @@ def main(page: ft.Page):
             page.session.store.clear()
             page.navigate("/login")
 
-        yes_button = ft.FilledButton("Yes", on_click=user_confirm_logout)
-        no_button = ft.FilledButton("No", on_click=lambda e: page.pop_dialog())
+        yes_button = ft.FilledButton(
+            "Yes",
+            on_click=user_confirm_logout,
+        )
+
+        no_button = ft.FilledButton(
+            "No",
+            on_click=lambda e: page.pop_dialog(),
+        )
 
         user_confirm_dialog = ft.AlertDialog(
             modal=False,
             title=ft.Text("Logout"),
-            content=ft.Text("Are you sure you wish to logout?"),
+            content=ft.Text(
+                "Are you sure you wish to logout?"
+            ),
             actions=[yes_button, no_button],
             actions_alignment=ft.MainAxisAlignment.END,
         )
 
         page.show_dialog(user_confirm_dialog)
 
-    logout_button = ft.FilledButton(content=ft.Text("Logout"), on_click=logout)
+    logout_button = ft.FilledButton(
+        content=ft.Text("Logout"),
+        on_click=logout,
+    )
 
     logout_container = ft.Container(
-        content=logout_button, alignment=ft.Alignment.TOP_RIGHT
+        content=logout_button,
+        alignment=ft.Alignment.TOP_RIGHT,
     )
 
     def home_route_change(e):
-        if e.control.selected_index == 0:
+        if e.control.selected_index == 1:
+            navigation_bar.selected_index = 0
+            page.show_dialog(settings_dialog(page))
+        else:
             page.navigate("/home")
-        elif e.control.selected_index == 1:
-            page.navigate("/settings")
 
     navigation_bar = ft.NavigationBar(
         selected_index=0,
         on_change=home_route_change,
         destinations=[
-            ft.NavigationBarDestination(icon=ft.Icons.HOME_ROUNDED, label="Home"),
             ft.NavigationBarDestination(
-                icon=ft.Icons.ACCOUNT_CIRCLE_ROUNDED, label="", tooltip="Settings"
+                icon=ft.Icons.HOME_ROUNDED,
+                label="Home",
+            ),
+            ft.NavigationBarDestination(
+                icon=ft.Icons.ACCOUNT_CIRCLE_ROUNDED,
+                label="",
+                tooltip="Settings",
             ),
         ],
     )
 
-    page.session.store.set("User_ID", "")
+    page.session.store.set(
+        "User_ID",
+        "",
+    )
 
-    def on_route_change(e=None):
+    def route_change(e):
         page.views.clear()
 
-        template_route = ft.TemplateRoute(page.route)
+        route = page.route
 
-        if template_route.match("/home") and page.session.store.get("User_ID") != "":
-            page.views.append(home_page(page))
-            page.navigation_bar = navigation_bar
+        logged_in = (
+            page.session.store.get("User_ID")
+            != ""
+        )
+
+        if route == "/login":
+            page.views.append(
+                login_page(page)
+            )
+
+        elif route == "/home" and logged_in:
+            navigation_bar.selected_index = 0
             navigation_bar.destinations[1].label = (
                 f"{page.session.store.get('User_ID')}"
             )
-        elif page.route == "/login":
-            page.views.append(login_page(page))
-        elif page.route == "/settings" and page.session.store.get("User_ID") != "":
-            page.views.append(settings_page(page))
+
+            view = home_page(page)
+            view.navigation_bar = navigation_bar
+            page.views.append(view)
+
             page.add(logout_container)
-            page.navigation_bar = navigation_bar
-            navigation_bar.destinations[1].label = (
-                f"{page.session.store.get('User_ID')}"
+
+        elif route == "/quiz" and logged_in:
+            question_set_json = (
+                page.session.store.get(
+                    "Current_Question_Set"
+                )
             )
-        elif page.route == "/quiz" and page.session.store.get("User_ID") != "":
-            page.views.append(quiz_page(page))
-            page.navigation_bar = navigation_bar
-            navigation_bar.destinations[1].label = (
-                f"{page.session.store.get('User_ID')}"
+
+            if not question_set_json:
+                page.navigate("/home")
+                return
+
+            try:
+                question_set = (
+                    QuestionSet.model_validate_json(
+                        question_set_json
+                    )
+                )
+            except Exception:
+                page.navigate("/home")
+                return
+
+            duration_seconds = page.session.store.get(
+                "Quiz_Duration_Seconds"
             )
+
+            page.views.append(
+                quiz_page(
+                    page,
+                    question_set,
+                    duration_seconds,
+                )
+            )
+
+        else:
+            page.navigate("/login")
+            return
 
         page.update()
 
-    page.on_route_change = on_route_change
-    on_route_change()
+    page.on_route_change = route_change
+
     page.navigate("/login")
+
+
 
 
 if __name__ == "__main__":

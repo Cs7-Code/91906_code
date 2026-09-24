@@ -8,15 +8,19 @@ authors = [
     { name = "Timothy Das-Tracey", email = "22269@students.lynfield.school.nz" }
 ]
 dependencies = [
+    "argon2-cffi>=25.1.0",
     "faker>=40.35.0",
+    "flet>=1.0.1",
     "flet-math>=0.1.1",
-    "flet[all]>=0.86.1",
     "matplotlib>=3.10.9",
     "pdfplumber>=0.11.10",
     "pydantic>=2.13.4",
     "pyinstaller>=6.22.1",
+    "pymupdf>=1.28.2",
     "sqlalchemy>=2.0.52",
     "sqlmodel>=0.0.39",
+    "sympy>=1.14.0",
+    "zxcvbn-python>=4.4.24",
 ]
 
 [dependency-groups]
