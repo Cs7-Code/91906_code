@@ -218,6 +218,7 @@ class Question(BaseModel):
         default_factory=list
     )
     answer_working: str = ""
+    self_check_ok: bool = True
 
 
 class QuestionSet(BaseModel):
@@ -343,6 +344,21 @@ def password_strength(password):
         message = "Very strong"
 
     return score, message
+
+
+def as_markdown_code(text):
+    if not text:
+        return ""
+
+    cleaned = text.strip()
+
+    if not cleaned:
+        return ""
+
+    if "`" in cleaned:
+        return f"``{cleaned}``"
+
+    return f"`{cleaned}`"
 
 
 def clean_pdf_text(text):
@@ -508,10 +524,68 @@ def get_pdf_lines(pdf_path):
     return pages
 
 
+NUMBER_WORDS = {
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+    "eleven": 11,
+    "twelve": 12,
+    "thirteen": 13,
+    "fourteen": 14,
+    "fifteen": 15,
+    "sixteen": 16,
+    "seventeen": 17,
+    "eighteen": 18,
+    "nineteen": 19,
+    "twenty": 20,
+}
+
+NUMBER_WORD_PATTERN = "|".join(
+    sorted(
+        NUMBER_WORDS.keys(),
+        key=len,
+        reverse=True,
+    )
+)
+
+
+def parse_question_number(raw):
+    if raw is None:
+        return None
+
+    cleaned = raw.strip().lower()
+
+    if cleaned.isdigit():
+        value = int(cleaned)
+
+        return (
+            value
+            if 1 <= value <= 20
+            else None
+        )
+
+    return NUMBER_WORDS.get(cleaned)
+
+
 def find_question_headers(
     page_lines
 ):
     headers = []
+
+    header_pattern = re.compile(
+        r"^(?:QUESTION\s*)?"
+        r"(\d{1,2}|"
+        + NUMBER_WORD_PATTERN
+        + r")[\.:]?\s*$",
+        re.IGNORECASE,
+    )
 
     for page_number, lines in enumerate(
         page_lines
@@ -521,19 +595,16 @@ def find_question_headers(
         ):
             text = line["text"].strip()
 
-            match = re.match(
-                r"^(?:QUESTION\s*)?(\d{1,2})"
-                r"[\.:]?\s*$",
-                text,
-                re.IGNORECASE,
+            match = header_pattern.match(
+                text
             )
 
             if match:
-                number = int(
+                number = parse_question_number(
                     match.group(1)
                 )
 
-                if 1 <= number <= 20:
+                if number:
                     headers.append(
                         {
                             "number": number,
@@ -826,58 +897,163 @@ def parse_marking_schedule(
     )
 
 
+def extract_schedule_answers_from_tables(
+    schedule_path
+):
+    answers = {}
+
+    label_pattern = re.compile(
+        r"^(?:Q(?:UESTION)?\.?\s*)?"
+        r"(\d{1,2})\s*\(?([a-h])\)?[\.:]?\s*$",
+        re.IGNORECASE,
+    )
+
+    try:
+        document = pymupdf.open(
+            str(schedule_path)
+        )
+    except Exception:
+        return answers
+
+    current_question = None
+    current_letter = None
+
+    try:
+        for page in document:
+            if not hasattr(
+                page,
+                "find_tables",
+            ):
+                continue
+
+            try:
+                found_tables = page.find_tables()
+            except Exception:
+                continue
+
+            for table in found_tables.tables:
+                try:
+                    rows = table.extract()
+                except Exception:
+                    continue
+
+                for row in rows:
+                    cells = [
+                        clean_pdf_text(cell or "")
+                        for cell in row
+                    ]
+
+                    if not any(cells):
+                        continue
+
+                    label_match = (
+                        label_pattern.match(
+                            cells[0]
+                        )
+                        if cells
+                        else None
+                    )
+
+                    if label_match:
+                        current_question = int(
+                            label_match.group(1)
+                        )
+
+                        current_letter = (
+                            label_match.group(2).lower()
+                        )
+
+                    if current_question is None:
+                        continue
+
+                    remainder = " ".join(
+                        cell
+                        for cell in cells[1:]
+                        if cell
+                    ).strip()
+
+                    if not remainder:
+                        continue
+
+                    key = (
+                        current_question,
+                        current_letter,
+                    )
+
+                    answers.setdefault(
+                        key,
+                        [],
+                    ).append(remainder)
+    except Exception:
+        pass
+    finally:
+        document.close()
+
+    return answers
+
+
 def extract_schedule_answers(
     schedule_text
 ):
     answers = {}
 
+    combined_pattern = re.compile(
+        r"^(?:Q(?:UESTION)?\.?\s*)?"
+        r"(\d{1,2})\s*\(?([a-h])\)?"
+        r"[\.:]?\s*(.+)$",
+        re.IGNORECASE,
+    )
+
+    header_pattern = re.compile(
+        r"^(?:Q(?:UESTION)?\.?\s*)?"
+        r"(\d{1,2}|"
+        + NUMBER_WORD_PATTERN
+        + r")[\.:]?\s*$",
+        re.IGNORECASE,
+    )
+
+    label_only_pattern = re.compile(
+        r"^\(([a-h])\)[\.:]?\s*$",
+        re.IGNORECASE,
+    )
+
+    bullet_pattern = re.compile(
+        r"^[•\u2022]"
+    )
+
     current_question = None
-    current_letter = None
+    section_letters = []
+    section_lines = []
 
-    for raw_line in schedule_text.splitlines():
-        line = raw_line.strip()
-
-        if not line:
-            continue
-
-        question_match = re.match(
-            r"^(?:Question|QUESTION)"
-            r"\s*(\d+)",
-            line,
-            re.IGNORECASE,
-        )
-
-        if question_match:
-            current_question = int(
-                question_match.group(1)
-            )
-
-            current_letter = None
-
-            continue
-
-        sub_match = re.match(
-            r"^\(?([a-h])"
-            r"[\.\):]\s*(.*)$",
-            line,
-            re.IGNORECASE,
-        )
-
+    def flush_section():
         if (
-            current_question is not None
-            and sub_match
+            current_question is None
+            or not section_letters
         ):
-            current_letter = (
-                sub_match.group(1).lower()
-            )
+            return
 
-            content = (
-                sub_match.group(2).strip()
+        content_lines = [
+            content_line
+            for content_line in section_lines
+            if not label_only_pattern.match(
+                content_line
             )
+            and not bullet_pattern.match(
+                content_line
+            )
+        ]
 
+        blob = "\n".join(
+            content_lines
+        ).strip()
+
+        if not blob:
+            return
+
+        for letter in section_letters:
             key = (
                 current_question,
-                current_letter,
+                letter,
             )
 
             answers.setdefault(
@@ -885,26 +1061,153 @@ def extract_schedule_answers(
                 [],
             )
 
+            if blob not in answers[key]:
+                answers[key].append(
+                    blob
+                )
+
+    lines = [
+        raw_line.strip()
+        for raw_line in schedule_text.splitlines()
+    ]
+
+    line_count = len(lines)
+    index = 0
+
+    while index < line_count:
+        line = lines[index]
+
+        if not line:
+            index += 1
+            continue
+
+        combined_match = combined_pattern.match(
+            line
+        )
+
+        if (
+            combined_match
+            and 1 <= int(combined_match.group(1)) <= 20
+        ):
+            flush_section()
+
+            current_question = int(
+                combined_match.group(1)
+            )
+
+            letter = (
+                combined_match.group(2).lower()
+            )
+
+            key = (
+                current_question,
+                letter,
+            )
+
+            answers.setdefault(
+                key,
+                [],
+            )
+
+            content = (
+                combined_match.group(3).strip()
+            )
+
             if content:
                 answers[key].append(
                     content
                 )
 
+            section_letters = []
+            section_lines = []
+
+            index += 1
+
             continue
 
-        if (
-            current_question is not None
-            and current_letter is not None
-        ):
-            key = (
-                current_question,
-                current_letter,
+        header_match = header_pattern.match(
+            line
+        )
+
+        if header_match:
+            raw_number_text = header_match.group(1)
+
+            number = parse_question_number(
+                raw_number_text
             )
 
-            answers.setdefault(
-                key,
-                []
-            ).append(line)
+            is_word_based = not (
+                raw_number_text.strip().isdigit()
+            )
+
+            confirmed = is_word_based
+
+            if number and not confirmed:
+                for lookahead in range(
+                    1,
+                    4,
+                ):
+                    if (
+                        index + lookahead
+                        >= line_count
+                    ):
+                        break
+
+                    lookahead_line = lines[
+                        index + lookahead
+                    ]
+
+                    if not lookahead_line:
+                        continue
+
+                    confirmed = bool(
+                        label_only_pattern.match(
+                            lookahead_line
+                        )
+                    )
+
+                    break
+
+            if number and confirmed:
+                flush_section()
+
+                current_question = number
+                section_letters = []
+                section_lines = []
+
+                index += 1
+
+                continue
+
+        label_match = label_only_pattern.match(
+            line
+        )
+
+        if (
+            label_match
+            and current_question is not None
+        ):
+            letter = (
+                label_match.group(1).lower()
+            )
+
+            if letter not in section_letters:
+                section_letters.append(
+                    letter
+                )
+
+            index += 1
+
+            continue
+
+        if current_question is not None:
+            section_lines.append(
+                line
+            )
+
+        index += 1
+
+    flush_section()
 
     return answers
 
@@ -949,6 +1252,19 @@ def extract_numbers(text):
     ]
 
 
+def answer_looks_checkable(text):
+    if not text:
+        return False
+
+    if extract_numbers(text):
+        return True
+
+    if "=" in text:
+        return True
+
+    return False
+
+
 def numbers_equivalent(
     first,
     second,
@@ -961,79 +1277,100 @@ def numbers_equivalent(
         second
     )
 
-    if not first_numbers:
+    if not first_numbers or not second_numbers:
         return False
 
-    if len(first_numbers) != len(
+    if len(first_numbers) > len(
         second_numbers
     ):
         return False
 
-    return all(
-        math.isclose(
-            first_value,
-            second_value,
-            rel_tol=1e-8,
-            abs_tol=1e-8,
-        )
-        for first_value, second_value
-        in zip(
-            first_numbers,
-            second_numbers,
-        )
-    )
+    window_size = len(first_numbers)
+
+    for start in range(
+        len(second_numbers) - window_size + 1
+    ):
+        window = second_numbers[
+            start:start + window_size
+        ]
+
+        if all(
+            math.isclose(
+                first_value,
+                second_value,
+                rel_tol=1e-6,
+                abs_tol=1e-6,
+            )
+            for first_value, second_value
+            in zip(first_numbers, window)
+        ):
+            return True
+
+    return False
 
 
 def symbolic_equivalent(
     first,
     second,
 ):
-    try:
-        first = normalize_answer(
-            first
+    locals_dictionary = {
+        "pi": sympy.pi,
+        "sqrt": sympy.sqrt,
+        "sin": sympy.sin,
+        "cos": sympy.cos,
+        "tan": sympy.tan,
+        "ln": sympy.log,
+        "log": sympy.log,
+        "e": sympy.E,
+    }
+
+    def candidates(value):
+        normalized = normalize_answer(
+            value
         ).replace(
             "^",
             "**",
         )
 
-        second = normalize_answer(
-            second
-        ).replace(
-            "^",
-            "**",
-        )
+        options = [normalized]
 
-        locals_dictionary = {
-            "pi": sympy.pi,
-            "sqrt": sympy.sqrt,
-            "sin": sympy.sin,
-            "cos": sympy.cos,
-            "tan": sympy.tan,
-            "ln": sympy.log,
-            "log": sympy.log,
-            "e": sympy.E,
-        }
-
-        first_expression = sympy.sympify(
-            first,
-            locals=locals_dictionary,
-        )
-
-        second_expression = sympy.sympify(
-            second,
-            locals=locals_dictionary,
-        )
-
-        return (
-            sympy.simplify(
-                first_expression
-                - second_expression
+        if "=" in normalized:
+            options.append(
+                normalized.rsplit("=", 1)[-1]
             )
-            == 0
+
+        return options
+
+    def parse(value):
+        return sympy.sympify(
+            value,
+            locals=locals_dictionary,
         )
 
-    except Exception:
-        return False
+    for first_candidate in candidates(first):
+        for second_candidate in candidates(second):
+            try:
+                first_expression = parse(
+                    first_candidate
+                )
+
+                second_expression = parse(
+                    second_candidate
+                )
+
+                if (
+                    sympy.simplify(
+                        first_expression
+                        - second_expression
+                    )
+                    == 0
+                ):
+                    return True
+
+            except Exception:
+                continue
+
+    return False
 
 
 def answer_is_correct(
@@ -1118,6 +1455,19 @@ def build_question_set(
         )
     )
 
+    try:
+        table_answers = (
+            extract_schedule_answers_from_tables(
+                schedule_path
+            )
+        )
+    except Exception:
+        table_answers = {}
+
+    for key, values in table_answers.items():
+        if values:
+            schedule_answers[key] = values
+
     assets_directory = (
         get_question_assets_directory()
         / f"{standard_number}_{year}"
@@ -1132,6 +1482,17 @@ def build_question_set(
         parents=True,
         exist_ok=True,
     )
+
+    try:
+        (
+            assets_directory
+            / "schedule_debug.txt"
+        ).write_text(
+            schedule_text,
+            encoding="utf-8",
+        )
+    except Exception:
+        pass
 
     question_list = []
 
@@ -1170,6 +1531,19 @@ def build_question_set(
             [],
         )
 
+        correct_answer = (
+            answers[-1] if answers else ""
+        )
+
+        self_check_ok = (
+            any(
+                answer_looks_checkable(candidate)
+                for candidate in answers
+            )
+            if answers
+            else True
+        )
+
         question_list.append(
             Question(
                 question_no=number,
@@ -1179,15 +1553,12 @@ def build_question_set(
                     formula or None
                 ),
                 question_images=images,
-                correct_answer=(
-                    answers[-1]
-                    if answers
-                    else ""
-                ),
+                correct_answer=correct_answer,
                 acceptable_answers=answers,
                 answer_working="\n".join(
                     answers
                 ),
+                self_check_ok=self_check_ok,
             )
         )
 
@@ -1214,6 +1585,497 @@ def question_title(question):
     )
 
 
+def review_page(page, question_set):
+    questions = question_set.question_list
+
+    current_index = 0
+    confirmed = set()
+    current_images = []
+
+    progress_text = ft.Text(
+        size=18,
+        weight=ft.FontWeight.BOLD,
+    )
+
+    confirmed_text = ft.Text(
+        size=14,
+        italic=True,
+    )
+
+    question_title_text = ft.Text(
+        size=22,
+        weight=ft.FontWeight.BOLD,
+    )
+
+    question_text_field = ft.TextField(
+        label="Question text",
+        multiline=True,
+        min_lines=3,
+        max_lines=10,
+    )
+
+    formula_field = ft.TextField(
+        label="Formula (optional)",
+        multiline=True,
+        min_lines=1,
+        max_lines=3,
+    )
+
+    image_column = ft.Column(spacing=10)
+
+    no_answer_warning = ft.Text(
+        "No accepted answer was detected for this "
+        "question — please check the marking schedule "
+        "and fill one in below.",
+        color=ft.Colors.ERROR,
+        visible=False,
+    )
+
+    self_check_warning = ft.Text(
+        "The extracted answer for this question doesn't "
+        "contain any numbers or equations — it may just be "
+        "leftover marking-schedule text rather than the "
+        "actual answer. Please check it carefully.",
+        color=ft.Colors.ERROR,
+        visible=False,
+    )
+
+    acceptable_answers_field = ft.TextField(
+        label="Acceptable answer(s), one per line",
+        multiline=True,
+        min_lines=2,
+        max_lines=6,
+    )
+
+    previous_button = ft.FilledButton("Previous")
+    next_button = ft.FilledButton("Confirm & Next")
+
+    def rebuild_image_column():
+        image_column.controls.clear()
+
+        if not current_images:
+            image_column.controls.append(
+                ft.Text(
+                    "No images for this question.",
+                    italic=True,
+                )
+            )
+
+            return
+
+        for image_path in list(current_images):
+            def remove_image(e, path=image_path):
+                if path in current_images:
+                    current_images.remove(path)
+                rebuild_image_column()
+                page.update()
+
+            image_file = pathlib.Path(image_path)
+
+            if not image_file.exists():
+                continue
+
+            image_column.controls.append(
+                ft.Row(
+                    controls=[
+                        ft.Image(
+                            src=str(image_file),
+                            fit=ft.BoxFit.CONTAIN,
+                            height=250,
+                        ),
+                        ft.IconButton(
+                            icon=ft.Icons.DELETE_OUTLINE_ROUNDED,
+                            tooltip=(
+                                "Remove this image "
+                                "from the question"
+                            ),
+                            on_click=remove_image,
+                        ),
+                    ]
+                )
+            )
+
+    def save_current_edits():
+        question = questions[current_index]
+
+        question.question_text = (
+            question_text_field.value or ""
+        )
+
+        question.question_formula = (
+            formula_field.value or None
+        )
+
+        question.question_images = list(
+            current_images
+        )
+
+        answers = [
+            line.strip()
+            for line in (
+                acceptable_answers_field.value or ""
+            ).splitlines()
+            if line.strip()
+        ]
+
+        question.acceptable_answers = answers
+        question.correct_answer = (
+            answers[-1] if answers else ""
+        )
+
+        question.self_check_ok = (
+            any(
+                answer_looks_checkable(candidate)
+                for candidate in answers
+            )
+            if answers
+            else True
+        )
+
+    def render_question():
+        nonlocal current_images
+
+        question = questions[current_index]
+
+        progress_text.value = (
+            f"{current_index + 1} "
+            f"of {len(questions)}"
+        )
+
+        confirmed_text.value = (
+            f"Confirmed {len(confirmed)} "
+            f"of {len(questions)}"
+        )
+
+        question_title_text.value = (
+            question_title(question)
+        )
+
+        question_text_field.value = (
+            question.question_text
+        )
+
+        formula_field.value = (
+            question.question_formula or ""
+        )
+
+        current_images = list(
+            question.question_images
+        )
+
+        rebuild_image_column()
+
+        acceptable_answers_field.value = "\n".join(
+            question.acceptable_answers
+        )
+
+        no_answer_warning.visible = (
+            not question.acceptable_answers
+        )
+
+        self_check_warning.visible = (
+            bool(question.acceptable_answers)
+            and not question.self_check_ok
+        )
+
+        previous_button.disabled = (
+            current_index == 0
+        )
+
+        next_button.text = (
+            "Confirm & Save Quiz"
+            if current_index == len(questions) - 1
+            else "Confirm & Next"
+        )
+
+        page.update()
+
+    def cancel_import(e):
+        def confirm_cancel(confirm_event):
+            page.pop_dialog()
+
+            assets_directory = (
+                get_question_assets_directory()
+                / question_set.question_set_name
+            )
+
+            if assets_directory.exists():
+                shutil.rmtree(
+                    assets_directory,
+                    ignore_errors=True,
+                )
+
+            page.session.store.set(
+                "Pending_Question_Set",
+                None,
+            )
+            page.navigate("/home")
+
+        page.show_dialog(
+            ft.AlertDialog(
+                modal=False,
+                title=ft.Text("Discard this import?"),
+                content=ft.Text(
+                    "This will discard everything extracted "
+                    "from the PDFs, including any images. "
+                    "You'll need to re-upload the exam and "
+                    "marking schedule to try again."
+                ),
+                actions=[
+                    ft.FilledButton(
+                        "Discard",
+                        on_click=confirm_cancel,
+                    ),
+                    ft.FilledButton(
+                        "Keep Reviewing",
+                        on_click=lambda e: page.pop_dialog(),
+                    ),
+                ],
+            )
+        )
+
+    def go_previous(e):
+        nonlocal current_index
+
+        save_current_edits()
+
+        if current_index > 0:
+            current_index -= 1
+            render_question()
+
+    def finish_review():
+        existing_path = (
+            get_question_sets_directory()
+            / f"{question_set.question_set_name}.json"
+        )
+
+        def do_save():
+            question_set.save_to_json()
+
+            page.session.store.set(
+                "Pending_Question_Set",
+                None,
+            )
+
+            page.show_dialog(
+                ft.SnackBar(
+                    content=ft.Text(
+                        "Quiz reviewed and saved!"
+                    ),
+                    show_close_icon=True,
+                    duration=6000,
+                )
+            )
+
+            page.navigate("/home")
+
+        if existing_path.exists():
+            def confirm_overwrite(e):
+                page.pop_dialog()
+                do_save()
+
+            page.show_dialog(
+                ft.AlertDialog(
+                    modal=False,
+                    title=ft.Text(
+                        "Overwrite existing quiz?"
+                    ),
+                    content=ft.Text(
+                        "A saved quiz named "
+                        f'"{question_set.question_set_name}" '
+                        "already exists. Saving will "
+                        "replace it."
+                    ),
+                    actions=[
+                        ft.FilledButton(
+                            "Overwrite",
+                            on_click=confirm_overwrite,
+                        ),
+                        ft.FilledButton(
+                            "Cancel",
+                            on_click=lambda e: (
+                                page.pop_dialog()
+                            ),
+                        ),
+                    ],
+                )
+            )
+        else:
+            do_save()
+
+    def go_next(e):
+        nonlocal current_index
+
+        save_current_edits()
+        confirmed.add(current_index)
+
+        if current_index < len(questions) - 1:
+            current_index += 1
+            render_question()
+        else:
+            if len(confirmed) < len(questions):
+                show_message_dialog(
+                    page,
+                    "Some questions not yet reviewed",
+                    f"You've confirmed {len(confirmed)} of "
+                    f"{len(questions)} questions. Please go "
+                    "back and review the rest before saving.",
+                )
+                return
+
+            finish_review()
+
+    previous_button.on_click = go_previous
+    next_button.on_click = go_next
+
+    def view_raw_schedule_text(e):
+        debug_path = (
+            get_question_assets_directory()
+            / question_set.question_set_name
+            / "schedule_debug.txt"
+        )
+
+        if not debug_path.exists():
+            show_message_dialog(
+                page,
+                "Nothing to show",
+                "No raw marking schedule text was saved "
+                "for this import.",
+            )
+            return
+
+        try:
+            raw_text = debug_path.read_text(
+                encoding="utf-8"
+            )
+        except Exception:
+            raw_text = (
+                "(Could not read the saved "
+                "schedule text file.)"
+            )
+
+        page.show_dialog(
+            ft.AlertDialog(
+                modal=False,
+                title=ft.Text(
+                    "Raw marking schedule text"
+                ),
+                content=ft.Container(
+                    content=ft.Column(
+                        controls=[
+                            ft.Text(
+                                "This is exactly what was "
+                                "extracted from the marking "
+                                "schedule PDF, before any "
+                                "parsing. Select and copy it "
+                                "if you need to share it.",
+                                size=12,
+                                italic=True,
+                            ),
+                            ft.TextField(
+                                value=raw_text,
+                                multiline=True,
+                                read_only=True,
+                                min_lines=15,
+                                max_lines=15,
+                            ),
+                        ],
+                        scroll=ft.ScrollMode.AUTO,
+                        tight=True,
+                    ),
+                    width=600,
+                    height=400,
+                ),
+                actions=[
+                    ft.FilledButton(
+                        "Close",
+                        on_click=lambda e: page.pop_dialog(),
+                    )
+                ],
+            )
+        )
+
+    view_raw_button = ft.TextButton(
+        "View Raw Marking Schedule Text (debug)",
+        icon=ft.Icons.BUG_REPORT_OUTLINED,
+        on_click=view_raw_schedule_text,
+    )
+
+    render_question()
+
+    review_column = ft.Column(
+        controls=[
+            ft.Row(
+                controls=[
+                    ft.FilledButton(
+                        "Cancel Import",
+                        on_click=cancel_import,
+                    ),
+                    ft.Container(expand=True),
+                    progress_text,
+                    ft.Container(expand=True),
+                    confirmed_text,
+                ]
+            ),
+            view_raw_button,
+            ft.Divider(),
+            question_title_text,
+            question_text_field,
+            formula_field,
+            ft.Text(
+                "Images",
+                size=14,
+                weight=ft.FontWeight.BOLD,
+            ),
+            image_column,
+            ft.Divider(),
+            no_answer_warning,
+            self_check_warning,
+            acceptable_answers_field,
+            ft.Divider(),
+            ft.Row(
+                controls=[
+                    previous_button,
+                    next_button,
+                ],
+                alignment=(
+                    ft.MainAxisAlignment.CENTER
+                ),
+            ),
+        ],
+        scroll=ft.ScrollMode.AUTO,
+        expand=True,
+    )
+
+    return ft.View(
+        route="/review",
+        controls=[
+            ft.Container(
+                content=ft.Column(
+                    controls=[
+                        ft.Text(
+                            f"Review: "
+                            f"{question_set.question_set_name}",
+                            size=24,
+                            weight=ft.FontWeight.BOLD,
+                        ),
+                        ft.Text(
+                            "Please check the text, images "
+                            "and correct answer for every "
+                            "question before saving.",
+                            size=14,
+                        ),
+                        review_column,
+                    ],
+                    expand=True,
+                ),
+                padding=20,
+                expand=True,
+            )
+        ],
+    )
+
+
 def humanize_time(seconds):
     seconds = max(int(round(seconds)), 0)
 
@@ -1227,6 +2089,31 @@ def humanize_time(seconds):
         return f"{minutes}m {secs}s"
 
     return f"{secs}s"
+
+
+def show_message_dialog(
+    page,
+    title,
+    message,
+    dismiss_label="Dismiss",
+):
+    def close_dialog(e):
+        page.pop_dialog()
+
+    page.show_dialog(
+        ft.AlertDialog(
+            modal=False,
+            title=ft.Text(title),
+            content=ft.Text(message),
+            scrollable=False,
+            actions=[
+                ft.FilledButton(
+                    dismiss_label,
+                    on_click=close_dialog,
+                )
+            ],
+        )
+    )
 
 
 def quiz_page(
@@ -1279,8 +2166,8 @@ def quiz_page(
         selectable=True,
     )
 
-    formula_text = ft.Text(
-        size=17,
+    formula_text = ft.Markdown(
+        value="",
         selectable=True,
     )
 
@@ -1295,11 +2182,26 @@ def quiz_page(
         max_lines=6,
     )
 
+    answer_preview = ft.Markdown(
+        value="",
+        selectable=True,
+    )
+
+    def sync_answer_preview(e=None):
+        answer_preview.value = (
+            answer_field.value or ""
+        )
+
+        page.update()
+
+    answer_field.on_change = sync_answer_preview
+
     feedback_text = ft.Text(
         size=18,
     )
 
-    working_text = ft.Text(
+    working_text = ft.Markdown(
+        value="",
         selectable=True,
     )
 
@@ -1406,11 +2308,14 @@ def quiz_page(
         )
 
         formula_text.value = (
-            question.question_formula
-            or ""
+            as_markdown_code(
+                question.question_formula
+            )
         )
 
         answer_field.value = ""
+
+        answer_preview.value = ""
 
         feedback_text.value = ""
 
@@ -1445,6 +2350,10 @@ def quiz_page(
                 result["answer"]
             )
 
+            answer_preview.value = (
+                result["answer"]
+            )
+
             if result["correct"]:
                 feedback_text.value = (
                     "Correct!"
@@ -1455,8 +2364,8 @@ def quiz_page(
                 )
 
                 working_text.value = (
-                    "Marking schedule:\n"
-                    f"{question.correct_answer}"
+                    "**Marking schedule answer:**\n\n"
+                    f"{as_markdown_code(question.correct_answer)}"
                 )
 
             check_button.disabled = True
@@ -1532,8 +2441,8 @@ def quiz_page(
             )
 
             working_text.value = (
-                "Marking schedule answer:\n"
-                f"{question.correct_answer}"
+                "**Marking schedule answer:**\n\n"
+                f"{as_markdown_code(question.correct_answer)}"
             )
 
         check_button.disabled = True
@@ -1572,36 +2481,42 @@ def quiz_page(
             else 0
         )
 
-        result_text = ft.Column(
-            controls=[
-                ft.Text(
-                    "Quiz Complete",
-                    size=30,
-                    weight=ft.FontWeight.BOLD,
-                ),
-                ft.Text(
-                    f"Score: "
-                    f"{score}/"
-                    f"{len(questions)}",
-                    size=22,
-                ),
-                ft.Text(
-                    f"Percentage: "
-                    f"{percentage:.1f}%",
-                    size=20,
-                ),
-                ft.Text(
-                    f"Attempted: "
-                    f"{attempted}/"
-                    f"{len(questions)}",
-                    size=18,
-                ),
+        result_controls = [
+            ft.Text(
+                "Quiz Complete",
+                size=30,
+                weight=ft.FontWeight.BOLD,
+            ),
+            ft.Text(
+                f"Score: "
+                f"{score}/"
+                f"{len(questions)}",
+                size=22,
+            ),
+            ft.Text(
+                f"Percentage: "
+                f"{percentage:.1f}%",
+                size=20,
+            ),
+            ft.Text(
+                f"Attempted: "
+                f"{attempted}/"
+                f"{len(questions)}",
+                size=18,
+            ),
+        ]
+
+        if is_timed:
+            result_controls.append(
                 ft.Text(
                     f"Time: "
                     f"{humanize_time(elapsed)}",
                     size=18,
-                ),
-            ],
+                )
+            )
+
+        result_text = ft.Column(
+            controls=result_controls,
             horizontal_alignment=(
                 ft.CrossAxisAlignment.CENTER
             ),
@@ -1741,6 +2656,7 @@ def quiz_page(
             formula_text,
             image_column,
             answer_field,
+            answer_preview,
             ft.Row(
                 controls=[
                     check_button,
@@ -1822,21 +2738,10 @@ def home_page(page):
     saved_list = ft.Column(spacing=5)
 
     def show_error(message):
-        def close_dialog(e):
-            page.pop_dialog()
-
-        page.show_dialog(
-            ft.AlertDialog(
-                modal=False,
-                title=ft.Text("Couldn't create quiz"),
-                content=ft.Text(message),
-                actions=[
-                    ft.FilledButton(
-                        "Dismiss",
-                        on_click=close_dialog,
-                    )
-                ],
-            )
+        show_message_dialog(
+            page,
+            "Couldn't create quiz",
+            message,
         )
 
     def start_question_set(question_set, duration_seconds=None):
@@ -2029,21 +2934,110 @@ def home_page(page):
 
         page.update()
 
+    async def show_step_dialog(
+        title,
+        message,
+        continue_label,
+    ):
+        future = asyncio.get_event_loop().create_future()
+
+        def on_continue(e):
+            page.pop_dialog()
+
+            if not future.done():
+                future.set_result(True)
+
+        def on_cancel(e):
+            page.pop_dialog()
+
+            if not future.done():
+                future.set_result(False)
+
+        page.show_dialog(
+            ft.AlertDialog(
+                modal=True,
+                title=ft.Text(title),
+                content=ft.Text(message),
+                actions=[
+                    ft.FilledButton(
+                        continue_label,
+                        on_click=on_continue,
+                    ),
+                    ft.FilledButton(
+                        "Cancel",
+                        on_click=on_cancel,
+                    ),
+                ],
+            )
+        )
+
+        return await future
+
     async def create_quiz(e):
+        wants_exam = await show_step_dialog(
+            "Step 1 of 2: Exam / Question Paper",
+            "You'll now be asked to choose a PDF. "
+            "Pick the EXAM PAPER — the document that "
+            "has the actual exam QUESTIONS on it "
+            "(not the answers).",
+            "Choose Exam Paper",
+        )
+
+        if not wants_exam:
+            return
+
+        status_text.value = (
+            "Waiting for you to choose the "
+            "exam / question paper..."
+        )
+        page.update()
+
         exam_files = await exam_picker.pick_files(
+            dialog_title=(
+                "Select the EXAM / QUESTION paper PDF"
+            ),
             allow_multiple=False,
+            file_type=ft.FilePickerFileType.CUSTOM,
             allowed_extensions=["pdf"],
         )
 
         if not exam_files:
+            status_text.value = ""
+            page.update()
             return
 
+        wants_schedule = await show_step_dialog(
+            "Step 2 of 2: Marking Schedule / Answers",
+            "Now choose the MARKING SCHEDULE — the "
+            "official document with the correct "
+            "ANSWERS on it (not the exam questions).",
+            "Choose Marking Schedule",
+        )
+
+        if not wants_schedule:
+            status_text.value = ""
+            page.update()
+            return
+
+        status_text.value = (
+            "Waiting for you to choose the "
+            "marking schedule / answer paper..."
+        )
+        page.update()
+
         schedule_files = await schedule_picker.pick_files(
+            dialog_title=(
+                "Select the MARKING SCHEDULE / "
+                "ANSWER paper PDF"
+            ),
             allow_multiple=False,
+            file_type=ft.FilePickerFileType.CUSTOM,
             allowed_extensions=["pdf"],
         )
 
         if not schedule_files:
+            status_text.value = ""
+            page.update()
             return
 
         create_button.disabled = True
@@ -2057,7 +3051,6 @@ def home_page(page):
                 exam_files[0].path,
                 schedule_files[0].path,
             )
-            new_question_set.save_to_json()
         except ValueError as error:
             show_error(str(error))
             return
@@ -2072,13 +3065,25 @@ def home_page(page):
             status_text.value = ""
             page.update()
 
-        refresh_saved_quizzes()
-        open_start_quiz_dialog(new_question_set)
+        page.session.store.set(
+            "Pending_Question_Set",
+            new_question_set.model_dump_json(),
+        )
+        page.navigate("/review")
 
     create_button = ft.FilledButton(
         "Create Quiz from PDFs",
         icon=ft.Icons.UPLOAD_FILE_ROUNDED,
         on_click=create_quiz,
+    )
+
+    create_quiz_helper_text = ft.Text(
+        "You'll be asked for two separate PDFs: "
+        "first the EXAM / QUESTION paper, then the "
+        "MARKING SCHEDULE / ANSWER paper.",
+        size=12,
+        italic=True,
+        text_align=ft.TextAlign.CENTER,
     )
 
     home_column = ft.Column(
@@ -2089,6 +3094,7 @@ def home_page(page):
                 controls=[create_button, progress_ring],
                 alignment=ft.MainAxisAlignment.CENTER,
             ),
+            create_quiz_helper_text,
             status_text,
             ft.Divider(),
             ft.Text(
@@ -2194,28 +3200,14 @@ def settings_dialog(page):
                 or not new_value
                 or score < 3
             ):
-                def close_dialog(e):
-                    page.pop_dialog()
-
-                create_user_input_fail_dialog = ft.AlertDialog(
-                    modal=False,
-                    title=ft.Text("Input is of Incorrect Type"),
-                    content=ft.Text(
-                        "Input is of Incorrect Type, please re-enter "
-                        "your Password('s) and ensure they are of the "
-                        "correct types or are not the original value "
-                        "(i.e not blank)"
-                    ),
-                    scrollable=False,
-                    actions=[
-                        ft.FilledButton(
-                            "Dismiss",
-                            on_click=close_dialog,
-                        )
-                    ],
+                show_message_dialog(
+                    page,
+                    "Input is of Incorrect Type",
+                    "Input is of Incorrect Type, please re-enter "
+                    "your Password('s) and ensure they are of the "
+                    "correct types or are not the original value "
+                    "(i.e not blank)",
                 )
-
-                page.show_dialog(create_user_input_fail_dialog)
                 return False
 
             engine = User.db_config()
@@ -2240,28 +3232,14 @@ def settings_dialog(page):
                     InvalidHashError,
                     VerificationError,
                 ):
-                    def close_dialog(e):
-                        page.pop_dialog()
-
-                    fail_dialog = ft.AlertDialog(
-                        modal=False,
-                        title=ft.Text("Input is of Incorrect Type"),
-                        content=ft.Text(
-                            "Input is of Incorrect Type, please re-enter "
-                            "your Password('s) and ensure they are of the "
-                            "correct types or are not the original value "
-                            "(i.e not blank)"
-                        ),
-                        scrollable=False,
-                        actions=[
-                            ft.FilledButton(
-                                "Dismiss",
-                                on_click=close_dialog,
-                            )
-                        ],
+                    show_message_dialog(
+                        page,
+                        "Input is of Incorrect Type",
+                        "Input is of Incorrect Type, please re-enter "
+                        "your Password('s) and ensure they are of the "
+                        "correct types or are not the original value "
+                        "(i.e not blank)",
                     )
-
-                    page.show_dialog(fail_dialog)
                     return False
 
                 user.user_pass = password_hasher.hash(
@@ -2439,27 +3417,13 @@ def login_page(page):
                 raise ValueError
 
         except ValueError:
-            def close_dialog(e):
-                page.pop_dialog()
-
-            input_fail_dialog = ft.AlertDialog(
-                modal=False,
-                title=ft.Text("Input is of Incorrect Type"),
-                content=ft.Text(
-                    "Input is of Incorrect Type, please re-enter "
-                    "your user ID and/or Password and ensure they "
-                    "are of the correct types (i.e not blank)"
-                ),
-                scrollable=False,
-                actions=[
-                    ft.FilledButton(
-                        "Dismiss",
-                        on_click=close_dialog,
-                    )
-                ],
+            show_message_dialog(
+                page,
+                "Input is of Incorrect Type",
+                "Input is of Incorrect Type, please re-enter "
+                "your user ID and/or Password and ensure they "
+                "are of the correct types (i.e not blank)",
             )
-
-            page.show_dialog(input_fail_dialog)
             return False
 
         engine = User.db_config()
@@ -2478,27 +3442,13 @@ def login_page(page):
             page.navigate("/home")
 
         else:
-            def close_dialog(e):
-                page.pop_dialog()
-
-            login_fail_dialog = ft.AlertDialog(
-                modal=False,
-                title=ft.Text("Login Unsuccesful"),
-                content=ft.Text(
-                    "Login Unsuccesful, user ID and/or Password "
-                    "may be incorrect, please re-enter these "
-                    "values and try again"
-                ),
-                scrollable=False,
-                actions=[
-                    ft.FilledButton(
-                        "Dismiss",
-                        on_click=close_dialog,
-                    )
-                ],
+            show_message_dialog(
+                page,
+                "Login Unsuccesful",
+                "Login Unsuccesful, user ID and/or Password "
+                "may be incorrect, please re-enter these "
+                "values and try again",
             )
-
-            page.show_dialog(login_fail_dialog)
 
     login_button = ft.FilledButton(
         content=ft.Text("Login"),
@@ -2586,30 +3536,14 @@ def login_page(page):
                 user_pass,
             )
 
-            def close_created_dialog(e):
-                page.pop_dialog()
-
             if not is_user_creation_success:
-                unique_fail_dialog = ft.AlertDialog(
-                    modal=False,
-                    title=ft.Text(
-                        "User Information entered is not unique"
-                    ),
-                    content=ft.Text(
-                        "User Information entered is not unique, "
-                        "please re-enter your user ID and/or Password "
-                        "and ensure they are unique values"
-                    ),
-                    scrollable=False,
-                    actions=[
-                        ft.FilledButton(
-                            "Dismiss",
-                            on_click=close_created_dialog,
-                        )
-                    ],
+                show_message_dialog(
+                    page,
+                    "User Information entered is not unique",
+                    "User Information entered is not unique, "
+                    "please re-enter your user ID and/or Password "
+                    "and ensure they are unique values",
                 )
-
-                page.show_dialog(unique_fail_dialog)
                 return False
 
             page.pop_dialog()
@@ -2644,27 +3578,13 @@ def login_page(page):
                     raise ValueError
 
             except ValueError:
-                def close_dialog(e):
-                    page.pop_dialog()
-
-                create_user_input_fail_dialog = ft.AlertDialog(
-                    modal=False,
-                    title=ft.Text("Input is of Incorrect Type"),
-                    content=ft.Text(
-                        "Input is of Incorrect Type, please re-enter "
-                        "your user ID and/or Password and ensure they "
-                        "are of the correct types (i.e not blank)"
-                    ),
-                    scrollable=False,
-                    actions=[
-                        ft.FilledButton(
-                            "Dismiss",
-                            on_click=close_dialog,
-                        )
-                    ],
+                show_message_dialog(
+                    page,
+                    "Input is of Incorrect Type",
+                    "Input is of Incorrect Type, please re-enter "
+                    "your user ID and/or Password and ensure they "
+                    "are of the correct types (i.e not blank)",
                 )
-
-                page.show_dialog(create_user_input_fail_dialog)
                 return False
 
             engine = User.db_config()
@@ -2836,6 +3756,36 @@ def main(page):
             page.views.append(view)
 
             page.add(logout_container)
+
+        elif route == "/review" and logged_in:
+            pending_json = page.session.store.get(
+                "Pending_Question_Set"
+            )
+
+            if not pending_json:
+                page.navigate("/home")
+                return
+
+            try:
+                pending_question_set = (
+                    QuestionSet.model_validate_json(
+                        pending_json
+                    )
+                )
+            except Exception:
+                page.session.store.set(
+                    "Pending_Question_Set",
+                    None,
+                )
+                page.navigate("/home")
+                return
+
+            page.views.append(
+                review_page(
+                    page,
+                    pending_question_set,
+                )
+            )
 
         elif route == "/quiz" and logged_in:
             question_set_json = (
